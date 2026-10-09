@@ -4,7 +4,6 @@ import pytest
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
-from gitcontext.config.settings import Settings
 from gitcontext.embeddings import create_embedding_model, embed_documents
 
 
@@ -77,12 +76,10 @@ def test_create_embedding_model_uses_configured_huggingface_model(monkeypatch):
         "gitcontext.embeddings.embedder.HuggingFaceEmbeddings",
         FakeHuggingFaceEmbeddings,
     )
-    settings = Settings(
-        embedding_provider="huggingface",
-        embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-    )
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "huggingface")
+    monkeypatch.setenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 
-    model = create_embedding_model(settings)
+    model = create_embedding_model()
 
     assert isinstance(model, Embeddings)
     assert created_kwargs == {
@@ -91,8 +88,8 @@ def test_create_embedding_model_uses_configured_huggingface_model(monkeypatch):
     }
 
 
-def test_create_embedding_model_rejects_unsupported_provider():
-    settings = Settings(embedding_provider="local")
+def test_create_embedding_model_rejects_unsupported_provider(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "local")
 
     with pytest.raises(ValueError, match="Unsupported embedding provider"):
-        create_embedding_model(settings)
+        create_embedding_model()

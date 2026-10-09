@@ -27,9 +27,9 @@ and answers developer questions with cited sources.
 
 ## Module Responsibilities
 
-### `config/`
-Central configuration management. Loads settings from environment variables
-and `.env` files. No business logic lives here — only knobs and dials.
+### `config.py`
+Central configuration management. Loads environment variables from `.env`
+using python-dotenv. No business logic lives here — only knobs and dials.
 
 **Why separate?** Configuration changes frequently (API keys, model names,
 chunk sizes). Keeping it isolated means you never grep through business

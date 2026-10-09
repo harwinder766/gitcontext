@@ -55,7 +55,7 @@ pytest
 
 ```
 gitcontext/           # Main package
-├── config/           # Configuration and settings
+├── config.py         # Environment-based configuration
 ├── ingestion/        # Repository cloning and file discovery
 ├── parsing/          # Code and document parsing
 ├── chunking/         # Code-aware text chunking

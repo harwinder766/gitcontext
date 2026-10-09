@@ -4,20 +4,24 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from gitcontext.config.settings import Settings, get_settings
+from gitcontext.config import get_env
 
 
-def create_embedding_model(settings: Settings | None = None) -> Embeddings:
+def create_embedding_model() -> Embeddings:
     """Create the configured LangChain-compatible embedding model."""
-    resolved_settings = settings or get_settings()
+    embedding_provider = get_env("EMBEDDING_PROVIDER", "huggingface")
+    embedding_model = get_env(
+        "EMBEDDING_MODEL",
+        "sentence-transformers/all-MiniLM-L6-v2",
+    )
 
-    if resolved_settings.embedding_provider != "huggingface":
+    if embedding_provider != "huggingface":
         raise ValueError(
-            f"Unsupported embedding provider: {resolved_settings.embedding_provider}"
+            f"Unsupported embedding provider: {embedding_provider}"
         )
 
     return HuggingFaceEmbeddings(
-        model_name=resolved_settings.embedding_model,
+        model_name=embedding_model,
         encode_kwargs={"normalize_embeddings": True},
     )
 

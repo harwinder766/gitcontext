@@ -96,14 +96,13 @@ single package with clear module boundaries.
 
 **Context**: Need to manage API keys, model names, and tunable parameters.
 
-**Decision**: Use environment variables loaded via python-dotenv, with a
-`Settings` class using pydantic-settings.
+**Decision**: Use environment variables loaded via python-dotenv and read
+with `os.getenv()`.
 
 **Rationale**:
 - Follows 12-factor app principles.
 - `.env` file is git-ignored, preventing accidental key commits.
-- pydantic-settings provides validation and type coercion.
-- Single source of truth for all configuration.
+- A `.env.example` documents the supported configuration without secrets.
 
 ---
 
