@@ -6,7 +6,6 @@ from langchain_core.embeddings import Embeddings
 
 from gitcontext.embeddings import create_embedding_model, embed_documents
 
-
 class FakeEmbeddings(Embeddings):
     """Deterministic embedding model for unit tests."""
 
