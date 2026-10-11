@@ -36,10 +36,18 @@ def main() -> None:
         "question",
         help="Question to ask about the repository.",
     )
+    parser.add_argument(
+        "--repo-name",
+        required=True,
+        help="Repository name stored in Supabase.",
+    )
 
     args = parser.parse_args()
 
-    rag = RAG(query=args.question, filter = {'repo_name': 'test_repo'})
+    rag = RAG(
+        query=args.question,
+        filter={"repo_name": args.repo_name},
+    )
     response = rag.generate_response()
 
     # Display the answer

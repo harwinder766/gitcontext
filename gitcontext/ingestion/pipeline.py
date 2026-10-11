@@ -11,7 +11,7 @@ def ingest_repository(repo_path: Path) -> None:
     if not documents:
         print("No relevant files found in the repository.")
         return
-
+    
     # Step 2: Chunk the documents
     chunked_documents = chunk_documents(documents)
 
@@ -20,6 +20,11 @@ def ingest_repository(repo_path: Path) -> None:
 
     # Step 4: Store the chunked documents in Supabase
     vector_store = SupabaseVectorStore(embedding_model)
+
+    # Remove previously indexed chunks for this repository
+    deleted_count = vector_store.delete_repository(repo_path.name)
+    print(f"Removed {deleted_count} previously indexed chunks.")
+
     ids = vector_store.add_documents(chunked_documents)
 
-    print(f"Successfully ingested {len(ids)} documents into Supabase.")
+    print(f"Successfully ingested {len(ids)} chunks into Supabase.")

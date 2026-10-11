@@ -2,9 +2,8 @@ import os
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-from sympy import python
 
-from gitcontext.retrieval.retriver import Retriever
+from gitcontext.retrieval.retriever import Retriever
 
 load_dotenv()
 
@@ -47,7 +46,12 @@ class RAG:
 
         self.query = query
         self.filter = filter
-        self.retriever = Retriever(k=k)
+        self.retriever = Retriever(
+            k=k,
+            bm25_k = max(k,10),
+            vector_k = max(k,10),
+            rrf_k = max(k,60)
+        )
 
         self.llm = ChatOpenAI(
             model=model,
