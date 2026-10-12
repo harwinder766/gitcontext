@@ -12,10 +12,10 @@ class Retriever:
 
     def __init__(
         self,
-        k: int = 4,
-        bm25_k: int = 10,
-        vector_k: int = 10,
-        rrf_k: int = 60,
+        k: int,
+        bm25_k: int,
+        vector_k: int,
+        rrf_k: int
     ) -> None:
         if k <= 0:
             raise ValueError("k must be a positive integer.")

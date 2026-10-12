@@ -41,13 +41,21 @@ def main() -> None:
         for i, source in enumerate(response.sources, start=1):
             print(f"\n[{i}] {source.file_path}")
             print(f"    Repository : {source.repo_name}")
-            print(f"    Extension  : {source.extension}")
-            print(f"    Size       : {source.size_bytes} bytes")
-            print(f"    Full path  : {source.absolute_path}")
+            print(f"    Type       : {source.document_type}")
+            if source.commit_hash:
+                print(f"    Commit     : {source.commit_hash}")
+                print(f"    Message    : {source.commit_msg}")
+                print(f"    Chunk      : {source.chunk_index}")
+                print(f"    Extension  : {source.extension}")
+                print("    Size       : not available for commit diff")
+                print(f"    File path  : {source.file_path}")
+            else:
+                print(f"    Extension  : {source.extension}")
+                print(f"    Size       : {source.size_bytes} bytes")
+                print(f"    Full path  : {source.absolute_path}")
 
     print("\n" + "=" * 60)
 
 
 if __name__ == "__main__":
     main()
-

@@ -13,9 +13,9 @@ class HybridRetriever:
         self,
         documents: list[Document],
         vector_store: SupabaseVectorStore,
-        bm25_k: int = 10,
-        vector_k: int = 10,
-        final_k: int = 5,
+        bm25_k: int = 30,
+        vector_k: int = 30,
+        final_k: int = 10,
         rrf_k: int = 60,
     ) -> None:
         if not documents:

@@ -1,7 +1,8 @@
-from gitcontext.chunking.splitter import chunk_documents   
+from gitcontext.chunking.splitter import chunk_documents
 from gitcontext.embeddings.embedder import create_embedding_model
 from gitcontext.vectorstore.supabase_store import SupabaseVectorStore
 from gitcontext.ingestion.discovery import discover_files
+from gitcontext.ingestion.commit_ingestion import CommitIngestion
 from pathlib import Path
 
 def ingest_repository(repo_path: Path) -> None:
@@ -10,6 +11,13 @@ def ingest_repository(repo_path: Path) -> None:
     documents = discover_files(repo_path)
     if not documents:
         print("No relevant files found in the repository.")
+        return
+
+    commit_ingestion = CommitIngestion(repo_path=str(repo_path))
+    commit_documents = commit_ingestion.commits_traverse()
+    documents.extend(commit_documents)
+    if not documents:
+        print("No relevant documents found in the repository after commit traversal.")
         return
     
     # Step 2: Chunk the documents
