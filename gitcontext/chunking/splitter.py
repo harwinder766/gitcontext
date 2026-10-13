@@ -44,6 +44,50 @@ def _chunk_commit_document(
     ]
 
 
+def _chunk_pr_document(
+    document: Document, chunk_size: int, chunk_overlap: int
+) -> list[Document]:
+    """Split PR content while repeating its identity on every chunk."""
+    meta = document.metadata
+
+    header = (
+        f"PR number: {meta.get('pr_number')}\n"
+        f"PR title: {meta.get('pr_title')}\n"
+        f"PR state: {meta.get('pr_state')}\n"
+        f"Item type: {meta.get('pr_item_type')}\n"
+        f"Author: {meta.get('author_name')}\n"
+        f"Source: {meta.get('source')}"
+    )
+
+    # Preserve the original content while removing its duplicated header.
+    marker = "\n\nBody:\n"
+    _, sep, body = document.page_content.partition(marker)
+
+    if not sep:
+        body = document.page_content
+
+    body_size = max(200, chunk_size - len(header) - 40)
+    body_overlap = min(chunk_overlap, body_size // 4)
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=body_size,
+        chunk_overlap=body_overlap,
+    )
+
+    parts = splitter.split_text(body)
+
+    return [
+        Document(
+            page_content=(
+                f"{header}\n\n"
+                f"Content (part {i + 1}/{len(parts)}):\n{part}"
+            ),
+            metadata=dict(meta),
+        )
+        for i, part in enumerate(parts)
+    ]
+
+
 def chunk_documents(
     documents: list[Document],
     chunk_size: int = DEFAULT_CHUNK_SIZE,
@@ -64,6 +108,8 @@ def chunk_documents(
     for document in documents:
         if document.metadata.get("document_type") == "commit":
             document_chunks = _chunk_commit_document(document, chunk_size, chunk_overlap)
+        elif document.metadata.get("document_type") == "pull_request":
+            document_chunks = _chunk_pr_document(document, chunk_size, chunk_overlap)
         else:
             document_chunks = splitter.split_documents([document])
 

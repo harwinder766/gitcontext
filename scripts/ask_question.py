@@ -49,6 +49,12 @@ def main() -> None:
                 print(f"    Extension  : {source.extension}")
                 print("    Size       : not available for commit diff")
                 print(f"    File path  : {source.file_path}")
+            elif source.pr_number is not None:
+                print(f"    PR number  : {source.pr_number}")
+                print(f"    PR title   : {source.pr_title}")
+                print(f"    Item type  : {source.pr_item_type}")
+                print(f"    PR state   : {source.pr_state}")
+                print(f"    URL        : {source.url}")
             else:
                 print(f"    Extension  : {source.extension}")
                 print(f"    Size       : {source.size_bytes} bytes")
