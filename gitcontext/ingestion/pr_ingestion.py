@@ -132,7 +132,7 @@ class PullRequestIngestion:
             metadata={
                 "document_type": "pull_request",
                 "pr_item_type": item_type,
-                "repo_name": self.repo.name,
+                "repo_name": self.repo_full_name,
                 "source": source,
                 "pr_number": pr.number,
                 "pr_title": pr.title,

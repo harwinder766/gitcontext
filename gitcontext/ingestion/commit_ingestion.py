@@ -16,11 +16,13 @@ class CommitIngestion:
             only_commits: list[str] | None = None,
             only_in_branch: list[str] | None = None,
             only_authors : list[str] | None = None,
-            only_modifications_with_file_types : list[str] | None = None
+            only_modifications_with_file_types : list[str] | None = None,
+            repo_name: str | None = None,
     ):
         if not repo_path:
             raise ValueError("Repository path cannot be empty.")
         self.repo_path = repo_path
+        self.repo_name = repo_name or Path(repo_path).name
         self.since = since
         self.to = to
         self.from_commit = from_commit
@@ -36,8 +38,6 @@ class CommitIngestion:
     def commits_traverse(self) -> list[Document]:
         """Traverse commits and create one Document per modified file."""
         documents: list[Document] = []
-        repo_name = Path(self.repo_path).name
-    
         for commit in Repository(
             self.repo_path,
             order="reverse",
@@ -77,7 +77,7 @@ class CommitIngestion:
                     page_content=page_content,
                     metadata={
                         "document_type": "commit",
-                        "repo_name": repo_name,
+                        "repo_name": self.repo_name,
                         "source": source,
                         "commit_hash": commit.hash,
                         "commit_msg": commit.msg,

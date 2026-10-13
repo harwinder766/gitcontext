@@ -64,7 +64,10 @@ def _is_excluded(file_path: Path, repo_path: Path) -> bool:
     return False
 
 
-def discover_files(repo_path: Path) -> list[Document]:
+def discover_files(
+    repo_path: Path,
+    repo_name: str | None = None,
+) -> list[Document]:
     """Discover all relevant files in a repository directory.
 
     Walks the directory tree rooted at repo_path, skips excluded directories
@@ -86,6 +89,7 @@ def discover_files(repo_path: Path) -> list[Document]:
         ValueError: If repo_path does not exist or is not a directory.
     """
     repo_path = repo_path.resolve()
+    canonical_repo_name = repo_name or repo_path.name
 
     if not repo_path.exists():
         raise ValueError(f"Repository path does not exist: {repo_path}")
@@ -121,7 +125,7 @@ def discover_files(repo_path: Path) -> list[Document]:
                 "source": file_path.relative_to(repo_path).as_posix(),
                 "absolute_path": str(file_path),
                 "extension": file_path.suffix.lower(),
-                "repo_name": repo_path.name,
+                "repo_name": canonical_repo_name,
                 "size_bytes": file_path.stat().st_size,
             },
         )

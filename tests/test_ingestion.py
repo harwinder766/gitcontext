@@ -206,3 +206,11 @@ def test_metadata_has_all_expected_keys(tmp_path):
 
     expected_keys = {"source", "absolute_path", "extension", "repo_name", "size_bytes"}
     assert set(docs[0].metadata.keys()) == expected_keys
+
+
+def test_uses_canonical_repository_identifier(tmp_path):
+    (tmp_path / "app.py").write_text("x = 1", encoding="utf-8")
+
+    docs = discover_files(tmp_path, repo_name="owner/project")
+
+    assert docs[0].metadata["repo_name"] == "owner/project"
