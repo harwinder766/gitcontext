@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from urllib.parse import unquote
 
@@ -10,6 +11,16 @@ from gitcontext.generation.generation import RAG
 from gitcontext.ingestion.pipeline import extract_github_repo, ingest_repository
 from gitcontext.vectorstore.supabase_store import SupabaseVectorStore
 
+_INGESTION_STATUS: dict[str, dict[str, object]] = {}
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Initialize process-wide services once for the API lifetime."""
+    application.state.embedding_model = create_embedding_model()
+    yield
+
+
 app = FastAPI(
     title="GitContext API",
     description=(
@@ -17,9 +28,8 @@ app = FastAPI(
         "extracting contextual information."
     ),
     version="1.0.0",
+    lifespan=lifespan,
 )
-
-_INGESTION_STATUS: dict[str, dict[str, object]] = {}
 
 
 def _set_status(repo_name: str, status: str, message: str, error: str | None = None) -> None:
@@ -33,21 +43,25 @@ def _set_status(repo_name: str, status: str, message: str, error: str | None = N
 
 
 def _get_repo_list() -> list[str]:
-    database_url = os.getenv("SUPABASE_DATABASE_URL")
-    if not database_url:
-        raise HTTPException(
-            status_code=503,
-            detail="Supabase is not configured.",
-        )
+    embedding_model = getattr(app.state, "embedding_model", None)
+    if embedding_model is None:
+        raise HTTPException(status_code=503, detail="Embedding model is not ready.")
+    try:
+        vector_store = SupabaseVectorStore(embedding_model)
+        return vector_store.list_repositories()
+    except ValueError as error:
+        raise HTTPException(status_code=503, detail="Vector store is not configured.") from error
 
-    vector_store = SupabaseVectorStore(create_embedding_model())
-    documents = vector_store.load_documents()
-    repositories = {
-        document.metadata.get("repo_name")
-        for document in documents
-        if document.metadata.get("repo_name")
-    }
-    return sorted(repositories)
+
+def _validate_repo_name(repo_name: str) -> str:
+    repo_name = unquote(repo_name).strip()
+    parts = repo_name.split("/")
+    if len(parts) != 2 or not all(parts):
+        raise HTTPException(
+            status_code=400,
+            detail="Repository identifier must use the format 'owner/repository'.",
+        )
+    return repo_name
 
 
 @app.get("/")
@@ -58,16 +72,20 @@ def health() -> dict[str, str]:
 
 @app.get("/status")
 def status() -> dict[str, object]:
+    model_ready = getattr(app.state, "embedding_model", None) is not None
     return {
-        "status": "ok",
+        "status": "ok" if model_ready else "degraded",
+        "embedding_model_ready": model_ready,
         "vector_store_configured": bool(os.getenv("SUPABASE_DATABASE_URL")),
-        "repositories": _get_repo_list() if os.getenv("SUPABASE_DATABASE_URL") else [],
     }
 
 
 @app.post("/index")
 def index(request: IngestRequest) -> dict[str, object]:
-    repo_name = extract_github_repo(request.repo_url)
+    try:
+        repo_name = extract_github_repo(request.repo_url)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     _set_status(repo_name, "running", "Ingestion started.")
 
     try:
@@ -75,6 +93,7 @@ def index(request: IngestRequest) -> dict[str, object]:
             repo_url=request.repo_url,
             max_commits=request.max_commits,
             max_prs=request.max_prs,
+            embedding_model=getattr(app.state, "embedding_model", None),
         )
         _set_status(repo_name, "done", "Ingestion completed.", error=None)
         return {
@@ -98,7 +117,7 @@ def ingest(request: IngestRequest) -> dict[str, object]:
 
 @app.get("/ingest/{repo_name:path}")
 def get_ingest_status(repo_name: str) -> dict[str, object]:
-    repo_name = unquote(repo_name)
+    repo_name = _validate_repo_name(repo_name)
     status_data = _INGESTION_STATUS.get(repo_name)
     if status_data is None:
         return {
@@ -113,9 +132,7 @@ def get_ingest_status(repo_name: str) -> dict[str, object]:
 @app.post("/query")
 def query(request: AskRequest) -> object:
     """Query a GitHub repository."""
-    repo_name = request.repo_name.strip()
-    if not repo_name:
-        raise HTTPException(status_code=400, detail="repo_name is required.")
+    repo_name = _validate_repo_name(request.repo_name)
 
     try:
         indexed_repositories = _get_repo_list()
@@ -131,9 +148,13 @@ def query(request: AskRequest) -> object:
         )
 
     try:
+        embedding_model = getattr(app.state, "embedding_model", None)
+        if embedding_model is None:
+            raise HTTPException(status_code=503, detail="Embedding model is not ready.")
         rag = RAG(
             query=request.question,
             filter={"repo_name": repo_name},
+            embedding_model=embedding_model,
         )
         return rag.generate_response()
     except ValueError as error:
@@ -162,9 +183,12 @@ def list_repositories() -> dict[str, list[str]]:
 
 @app.delete("/repositories/{repo_name:path}")
 def delete_repository(repo_name: str) -> dict[str, object]:
-    repo_name = unquote(repo_name)
+    repo_name = _validate_repo_name(repo_name)
     try:
-        vector_store = SupabaseVectorStore(create_embedding_model())
+        embedding_model = getattr(app.state, "embedding_model", None)
+        if embedding_model is None:
+            raise HTTPException(status_code=503, detail="Embedding model is not ready.")
+        vector_store = SupabaseVectorStore(embedding_model)
         deleted_count = vector_store.delete_repository(repo_name)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

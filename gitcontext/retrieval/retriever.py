@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 
 from gitcontext.embeddings.embedder import create_embedding_model
 from gitcontext.retrieval.hybrid_retriever import HybridRetriever
@@ -15,7 +16,8 @@ class Retriever:
         k: int,
         bm25_k: int,
         vector_k: int,
-        rrf_k: int
+        rrf_k: int,
+        embedding_model: Embeddings | None = None,
     ) -> None:
         if k <= 0:
             raise ValueError("k must be a positive integer.")
@@ -31,7 +33,7 @@ class Retriever:
         self._vector_k = vector_k
         self._rrf_k = rrf_k
 
-        self.embedding_model = create_embedding_model()
+        self.embedding_model = embedding_model or create_embedding_model()
         self.vector_store = SupabaseVectorStore(self.embedding_model)
 
         self._hybrid_retriever: HybridRetriever | None = None

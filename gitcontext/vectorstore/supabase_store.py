@@ -54,6 +54,27 @@ class SupabaseVectorStore:
             for row in rows
         ]
 
+    def list_repositories(self) -> list[str]:
+        """Return distinct repository identifiers in this collection."""
+        with self.store._make_sync_session() as session:
+            collection = self.store.get_collection(session)
+
+            if collection is None:
+                return []
+
+            rows = session.execute(
+                text("""
+                    SELECT DISTINCT e.cmetadata->>'repo_name' AS repo_name
+                    FROM langchain_pg_embedding AS e
+                    WHERE e.collection_id = :collection_id
+                      AND e.cmetadata->>'repo_name' IS NOT NULL
+                    ORDER BY repo_name
+                """),
+                {"collection_id": collection.uuid},
+            )
+
+            return [row.repo_name for row in rows if row.repo_name]
+
 
     def similarity_search(self, query: str, k: int = 4, filter : dict | None = None) -> list[Document]:
         '''Perform a similarity search in Supabase with optional filtering.'''

@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 from pathlib import Path
+from langchain_core.embeddings import Embeddings
 
 from gitcontext.retrieval.retriever import Retriever
 from gitcontext.reranking.reranker import CrossEncoderReranker
@@ -54,6 +55,7 @@ class RAG:
         total_k: int = 30,
         top_k : int = 10,
         filter: dict | None = None,
+        embedding_model: Embeddings | None = None,
     ) -> None:
         if not query.strip():
             raise ValueError("Query must be a non-empty string.")
@@ -71,7 +73,8 @@ class RAG:
             k=total_k,
             bm25_k = max(total_k,10),
             vector_k = max(total_k,10),
-            rrf_k = max(total_k,60)
+            rrf_k = max(total_k,60),
+            embedding_model=embedding_model,
         )
         self.reranker = CrossEncoderReranker(
             model_name="cross-encoder/ms-marco-MiniLM-L-6-v2",
