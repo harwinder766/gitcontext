@@ -103,10 +103,15 @@ def _remove_readonly(func, path, _):
 def ingest_repository(
     repo_url: str,
     max_prs: int = 50,
+    max_commits: int | None = None,
 ) -> dict:
     """Ingest a repository: files, commits and pull requests."""
     if not repo_url:
         raise ValueError("Repository URL cannot be empty.")
+    if max_prs < 0:
+        raise ValueError("max_prs must be zero or a positive integer.")
+    if max_commits is not None and max_commits < 0:
+        raise ValueError("max_commits must be zero or a positive integer.")
 
     github_repo = extract_github_repo(repo_url)
     repo_path = clone_repository(repo_url)
@@ -119,6 +124,7 @@ def ingest_repository(
         commit_documents = CommitIngestion(
             repo_path=str(repo_path),
             repo_name=github_repo,
+            max_commits=max_commits,
         ).commits_traverse()
         documents.extend(commit_documents)
 

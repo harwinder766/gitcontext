@@ -18,11 +18,15 @@ class CommitIngestion:
             only_authors : list[str] | None = None,
             only_modifications_with_file_types : list[str] | None = None,
             repo_name: str | None = None,
+            max_commits: int | None = None,
     ):
         if not repo_path:
             raise ValueError("Repository path cannot be empty.")
+        if max_commits is not None and max_commits < 0:
+            raise ValueError("max_commits must be zero or a positive integer.")
         self.repo_path = repo_path
         self.repo_name = repo_name or Path(repo_path).name
+        self.max_commits = max_commits
         self.since = since
         self.to = to
         self.from_commit = from_commit
@@ -38,7 +42,7 @@ class CommitIngestion:
     def commits_traverse(self) -> list[Document]:
         """Traverse commits and create one Document per modified file."""
         documents: list[Document] = []
-        for commit in Repository(
+        commit_iter = Repository(
             self.repo_path,
             order="reverse",
             since=self.since,
@@ -53,8 +57,12 @@ class CommitIngestion:
             only_modifications_with_file_types=(
                 self.only_modifications_with_file_types
             ),
-        ).traverse_commits():
-    
+        ).traverse_commits()
+
+        for index, commit in enumerate(commit_iter):
+            if self.max_commits is not None and index >= self.max_commits:
+                break
+
             for file in commit.modified_files:
                 file_path = file.new_path or file.old_path
                 diff = file.diff or ""
