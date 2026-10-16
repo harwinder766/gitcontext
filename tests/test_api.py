@@ -26,24 +26,26 @@ def test_query_uses_selected_repository(monkeypatch):
     monkeypatch.setattr(api_main, "_get_repo_list", lambda: ["owner/project"])
     api_main.app.state.embedding_model = object()
 
-    class DummyRAG:
-        def __init__(self, query, filter, embedding_model):
-            self.query = query
-            self.filter = filter
-            self.embedding_model = embedding_model
-
-        def generate_response(self):
+    class DummyGraph:
+        def invoke(self, state, config):
+            assert state["repo_name"] == "owner/project"
+            assert config["configurable"]["thread_id"] == "thread-a"
             return {"answer": "ok", "sources": []}
 
-    monkeypatch.setattr(api_main, "RAG", DummyRAG)
+    api_main.app.state.conversation_graph = DummyGraph()
 
     response = client.post(
         "/query",
-        json={"question": "What changed?", "repo_name": "owner/project"},
+        json={
+            "question": "What changed?",
+            "repo_name": "owner/project",
+            "thread_id": "thread-a",
+        },
     )
     assert response.status_code == 200
     assert response.json()["answer"] == "ok"
     assert response.json()["sources"] == []
+    assert response.json()["thread_id"] == "thread-a"
 
 
 def test_index_route_sets_status_and_returns_repo_name(monkeypatch):

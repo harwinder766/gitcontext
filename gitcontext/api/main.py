@@ -1,4 +1,5 @@
 import os
+from uuid import uuid4
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from urllib.parse import unquote
@@ -7,7 +8,8 @@ from fastapi import FastAPI, HTTPException
 
 from gitcontext.api.schemas import AskRequest, IngestRequest
 from gitcontext.embeddings.embedder import create_embedding_model
-from gitcontext.generation.generation import RAG
+from gitcontext.generation.llm import create_llm
+from gitcontext.graph.graph import build_graph
 from gitcontext.ingestion.pipeline import extract_github_repo, ingest_repository
 from gitcontext.vectorstore.supabase_store import SupabaseVectorStore
 
@@ -18,7 +20,24 @@ _INGESTION_STATUS: dict[str, dict[str, object]] = {}
 async def lifespan(application: FastAPI):
     """Initialize process-wide services once for the API lifetime."""
     application.state.embedding_model = create_embedding_model()
-    yield
+    application.state.llm = create_llm()
+    database_url = os.getenv("SUPABASE_DATABASE_URL")
+    if not database_url:
+        raise RuntimeError(
+            "SUPABASE_DATABASE_URL is required for persistent conversation memory."
+        )
+
+    from langgraph.checkpoint.postgres import PostgresSaver
+
+    with PostgresSaver.from_conn_string(database_url) as checkpointer:
+        checkpointer.setup()
+        application.state.checkpointer = checkpointer
+        application.state.conversation_graph = build_graph(
+            llm=application.state.llm,
+            embedding_model=application.state.embedding_model,
+            checkpointer=checkpointer,
+        )
+        yield
 
 
 app = FastAPI(
@@ -148,17 +167,29 @@ def query(request: AskRequest) -> object:
         )
 
     try:
-        embedding_model = getattr(app.state, "embedding_model", None)
-        if embedding_model is None:
-            raise HTTPException(status_code=503, detail="Embedding model is not ready.")
-        rag = RAG(
-            query=request.question,
-            filter={"repo_name": repo_name},
-            embedding_model=embedding_model,
+        graph = getattr(app.state, "conversation_graph", None)
+        if graph is None:
+            raise HTTPException(status_code=503, detail="Conversation graph is not ready.")
+        thread_id = request.thread_id or str(uuid4())
+        result = graph.invoke(
+            {
+                "thread_id": thread_id,
+                "repo_name": repo_name,
+                "question": request.question,
+            },
+            config={"configurable": {"thread_id": thread_id}},
         )
-        return rag.generate_response()
+        if result.get("error") and result.get("answer") is None:
+            raise RuntimeError("Conversation graph failed.")
+        return {
+            "thread_id": thread_id,
+            "answer": result.get("answer", ""),
+            "sources": result.get("sources", []),
+        }
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(status_code=500, detail="Query failed.") from error
 
@@ -192,6 +223,8 @@ def delete_repository(repo_name: str) -> dict[str, object]:
         deleted_count = vector_store.delete_repository(repo_name)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(status_code=500, detail="Repository deletion failed.") from error
 

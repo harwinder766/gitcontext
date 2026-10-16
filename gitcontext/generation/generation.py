@@ -4,6 +4,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 from pathlib import Path
 from langchain_core.embeddings import Embeddings
+from typing import Any
 
 from gitcontext.retrieval.retriever import Retriever
 from gitcontext.reranking.reranker import CrossEncoderReranker
@@ -52,23 +53,27 @@ class RAG:
     def __init__(
         self,
         query: str,
+        llm: ChatOpenAI,
         total_k: int = 30,
         top_k : int = 10,
         filter: dict | None = None,
         embedding_model: Embeddings | None = None,
+        conversation_history: list[dict[str, Any]] | None = None,
     ) -> None:
         if not query.strip():
             raise ValueError("Query must be a non-empty string.")
+        if not llm:
+            raise ValueError("LLM instance must be provided.")
+        # api_key = os.getenv("XKIRO_API_KEY")
+        # base_url = os.getenv("XKIRO_BASE_URL")
+        # model = os.getenv("XKIRO_MODEL")
 
-        api_key = os.getenv("XKIRO_API_KEY")
-        base_url = os.getenv("XKIRO_BASE_URL")
-        model = os.getenv("XKIRO_MODEL")
-
-        if not all([api_key, base_url, model]):
-            raise ValueError("Missing xKiro API configuration in .env.")
-
+        # if not all([api_key, base_url, model]):
+        #     raise ValueError("Missing xKiro API configuration in .env.")
+        self.llm = llm
         self.query = query
         self.filter = filter
+        self.conversation_history = (conversation_history or [])[-6:]
         self.retriever = Retriever(
             k=total_k,
             bm25_k = max(total_k,10),
@@ -81,13 +86,13 @@ class RAG:
             top_n=top_k,
         )
 
-        self.llm = ChatOpenAI(
-            model=model,
-            api_key=api_key,
-            base_url=base_url,
-            temperature=0.1,
-            max_tokens=2048,
-        )
+        # self.llm = ChatOpenAI(
+        #     model=model,
+        #     api_key=api_key,
+        #     base_url=base_url,
+        #     temperature=0.1,
+        #     max_tokens=2048,
+        # )
 
 
     def generate_response(self) -> RAGResponse:
@@ -207,6 +212,11 @@ class RAG:
             for i, source in enumerate(sources, start=1)
         )
 
+        history_context = "\n".join(
+            f"{message.get('role', 'unknown').title()}: {message.get('content', '')}"
+            for message in self.conversation_history
+        )
+
         prompt = f"""
         You are GitContext, an AI assistant that helps developers understand
         code repositories.
@@ -245,6 +255,9 @@ class RAG:
         
         Context:
         {context}
+
+        Recent conversation context:
+        {history_context or "No previous conversation context is available."}
         
         Question:
         {self.query}

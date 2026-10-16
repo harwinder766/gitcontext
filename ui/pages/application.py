@@ -2,6 +2,7 @@
 
 import os
 import re
+from uuid import uuid4
 from pathlib import Path
 
 import requests
@@ -169,6 +170,8 @@ if "repos" not in st.session_state:
 
 if "chats" not in st.session_state:
     st.session_state.chats = {}
+if "thread_ids" not in st.session_state:
+    st.session_state.thread_ids = {}
 
 
 # -------------------- SIDEBAR --------------------
@@ -239,6 +242,8 @@ with st.sidebar:
 
     if clear_col.button("Clear chat", width="stretch") and repo:
         st.session_state.chats.pop(repo, None)
+        st.session_state.thread_ids.pop(repo, None)
+        st.session_state.thread_ids.pop(repo, None)
         st.rerun()
 
     if repo:
@@ -271,6 +276,7 @@ st.title("Ask your codebase")
 st.caption(f"Repository: [{repo}](https://github.com/{repo})")
 
 messages = st.session_state.chats.setdefault(repo, [])
+thread_id = st.session_state.thread_ids.setdefault(repo, str(uuid4()))
 
 for message in messages:
     with st.chat_message(message["role"]):
@@ -293,12 +299,16 @@ if question:
         st.markdown(question)
 
     with st.chat_message("assistant"):
-        with st.spinner("Searching the repository..."):
+        with st.spinner("Thinking..."):
             data, error = call_api(
                 "POST",
                 "/query",
                 timeout=180,
-                json={"question": question, "repo_name": repo},
+                json={
+                    "question": question,
+                    "repo_name": repo,
+                    "thread_id": thread_id,
+                },
             )
 
         if error:
@@ -315,4 +325,3 @@ if question:
             messages.append(
                 {"role": "assistant", "content": answer, "sources": sources}
             )
-
