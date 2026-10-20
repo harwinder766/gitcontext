@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+import logfire
 
 from gitcontext.embeddings.embedder import create_embedding_model
 from gitcontext.retrieval.hybrid_retriever import HybridRetriever
@@ -39,24 +40,29 @@ class Retriever:
         self._hybrid_retriever: HybridRetriever | None = None
         self.refresh()
 
+    @logfire.instrument("Refresh application retriever")
     def refresh(self) -> None:
         """Reload stored chunks and rebuild the in-memory BM25 index."""
-        documents = self.vector_store.load_documents()
+        with logfire.span("Loading indexed documents from Supabase"):
+            documents = self.vector_store.load_documents()
 
         if not documents:
             raise ValueError(
                 "No indexed documents were found in Supabase."
             )
+        with logfire.span("Building hybrid retriever"):
+            self._hybrid_retriever = HybridRetriever(
+                documents=documents,
+                vector_store=self.vector_store,
+                bm25_k=self._bm25_k,
+                vector_k=self._vector_k,
+                final_k=self.k,
+                rrf_k=self._rrf_k,
+            )
 
-        self._hybrid_retriever = HybridRetriever(
-            documents=documents,
-            vector_store=self.vector_store,
-            bm25_k=self._bm25_k,
-            vector_k=self._vector_k,
-            final_k=self.k,
-            rrf_k=self._rrf_k,
-        )
+        logfire.info("Application retriever refreshed")
 
+    
     def retrieve(
         self,
         query: str,

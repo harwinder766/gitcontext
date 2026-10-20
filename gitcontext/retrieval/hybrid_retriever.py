@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
+import logfire
 
 from gitcontext.vectorstore.supabase_store import SupabaseVectorStore
-
 
 class HybridRetriever:
     """Combine BM25 and Supabase vector retrieval using RRF."""
@@ -41,6 +41,7 @@ class HybridRetriever:
         self._final_k = final_k
         self._rrf_k = rrf_k
 
+    @logfire.instrument("Hybrid retrieval")
     def retrieve(
         self,
         query: str,
@@ -50,21 +51,33 @@ class HybridRetriever:
         if not query.strip():
             raise ValueError("Query must be a non-empty string.")
 
-        bm25_results = self._bm25_results(
-            query,
-            filter,
+        with logfire.span("BM25 retrieval",filter_applied=bool(filter)):
+            bm25_results = self._bm25_results(
+                query,
+                filter,
+            )
+
+        with logfire.span("Vector retrieval",top_k=self._vector_k,filter_applied=bool(filter)):
+            vector_results = self._vector_store.similarity_search(
+                query,
+                k=self._vector_k,
+                filter=filter,
+            )
+
+        with logfire.span("Reciprocal Rank Fusion"):
+            results = self._rrf_fusion(
+                bm25_results,
+                vector_results,
+            )
+
+        logfire.debug(
+            "Hybrid retrieval completed",
+            bm25_results_count=len(bm25_results),
+            vector_results_count=len(vector_results),
+            final_results_count=len(results),
         )
 
-        vector_results = self._vector_store.similarity_search(
-            query,
-            k=self._vector_k,
-            filter=filter,
-        )
-
-        return self._rrf_fusion(
-            bm25_results,
-            vector_results,
-        )
+        return results
 
     def _bm25_results(
         self,
@@ -202,3 +215,4 @@ class HybridRetriever:
             str(metadata[field])
             for field in required_fields
         )
+    

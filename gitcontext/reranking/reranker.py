@@ -1,5 +1,5 @@
 from copy import deepcopy
-
+import logfire
 from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 
@@ -9,15 +9,16 @@ class CrossEncoderReranker:
 
     def __init__(
         self,
-        model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        model : CrossEncoder,
         top_n: int = 5,
     ) -> None:
         if top_n <= 0:
             raise ValueError("top_n must be greater than zero")
 
         self.top_n = top_n
-        self.model = CrossEncoder(model_name)
+        self.model = model
 
+    @logfire.instrument("Rerank retrieved documents")
     def rerank(
         self,
         query: str,
@@ -35,8 +36,8 @@ class CrossEncoderReranker:
             (query, document.page_content)
             for document in documents
         ]
-
-        scores = self.model.predict(pairs)
+        with logfire.span("Score documents with CrossEncoder",document_count=len(pairs)):
+            scores = self.model.predict(pairs)
 
         ranked_results = sorted(
             zip(documents, scores),
@@ -55,5 +56,11 @@ class CrossEncoderReranker:
 
             reranked_document.metadata["rerank_score"] = float(score)
             results.append(reranked_document)
+
+        logfire.debug(
+            "Document reranking completed",
+            input_document_count=len(documents),
+            output_document_count=len(results),
+        )
 
         return results

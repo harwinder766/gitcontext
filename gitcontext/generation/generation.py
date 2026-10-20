@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from pathlib import Path
 from langchain_core.embeddings import Embeddings
 from typing import Any
+import logfire
 
 from gitcontext.retrieval.retriever import Retriever
 from gitcontext.reranking.reranker import CrossEncoderReranker
@@ -58,18 +59,13 @@ class RAG:
         top_k : int = 10,
         filter: dict | None = None,
         embedding_model: Embeddings | None = None,
+        cross_encoder_model: Any | None = None,
         conversation_history: list[dict[str, Any]] | None = None,
     ) -> None:
         if not query.strip():
             raise ValueError("Query must be a non-empty string.")
         if not llm:
             raise ValueError("LLM instance must be provided.")
-        # api_key = os.getenv("XKIRO_API_KEY")
-        # base_url = os.getenv("XKIRO_BASE_URL")
-        # model = os.getenv("XKIRO_MODEL")
-
-        # if not all([api_key, base_url, model]):
-        #     raise ValueError("Missing xKiro API configuration in .env.")
         self.llm = llm
         self.query = query
         self.filter = filter
@@ -82,19 +78,11 @@ class RAG:
             embedding_model=embedding_model,
         )
         self.reranker = CrossEncoderReranker(
-            model_name="cross-encoder/ms-marco-MiniLM-L-6-v2",
+            model=cross_encoder_model,
             top_n=top_k,
         )
 
-        # self.llm = ChatOpenAI(
-        #     model=model,
-        #     api_key=api_key,
-        #     base_url=base_url,
-        #     temperature=0.1,
-        #     max_tokens=2048,
-        # )
-
-
+    @logfire.instrument("Generate RAG response")
     def generate_response(self) -> RAGResponse:
         """Retrieve relevant documents and generate a structured answer."""
     
@@ -117,6 +105,7 @@ class RAG:
             )
     
         if not retrieved_docs:
+            logfire.info("RAG generation skipped: no relevant documents found")
             return RAGResponse(
                 answer="No relevant documents found.",
                 sources=[],
@@ -264,13 +253,18 @@ class RAG:
         
         Answer:
         """
-
+     
         structured_llm = self.llm.with_structured_output(GeneratedAnswer)
-        response = structured_llm.invoke(prompt)
-    
-        # Keep metadata from the actual retrieved documents rather than
-        # trusting the LLM to generate or reproduce it.
+        with logfire.span("Generate structured answer with LLM", context_source_count=len(sources),conversation_history_message_count=len(self.conversation_history)):
+            response = structured_llm.invoke(prompt)
+        
+        logfire.debug(
+                    "RAG answer generated",
+                    source_count=len(sources),
+                    answer_length=len(response.answer),
+                )
+        
         return RAGResponse(
-            answer=response.answer,
-            sources=sources,
-        )
+                answer=response.answer,
+                sources=sources,
+            )
