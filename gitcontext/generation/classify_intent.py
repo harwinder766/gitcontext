@@ -1,99 +1,9 @@
-# from __future__ import annotations
-
-# from typing import Literal, cast
-# import logfire
-# from langchain_openai import ChatOpenAI
-# from pydantic import BaseModel, Field
-
-
-# Intent = Literal[
-#     "greeting",
-#     "history_current_repo",
-#     "clarification",
-# ]
-
-
-# class IntentClassification(BaseModel):
-#     """Classification of a user's message for GitContext routing."""
-
-#     intent: Intent = Field(
-#         description=(
-#             "The user's intent: 'greeting', 'history_current_repo', or 'clarification'."
-#         )
-#     )
-
-
-# class ClassifyIntent:
-#     """Classify a user's message to route it through GitContext."""
-
-#     def __init__(
-#         self,
-#         query: str,
-#         llm: ChatOpenAI,
-#         has_history: bool = False,
-#     ) -> None:
-#         if not query or not query.strip():
-#             raise ValueError("Query must be a non-empty string.")
-
-#         if llm is None:
-#             raise ValueError("LLM instance must be provided.")
-
-#         self.query = query.strip()
-#         self.llm = llm
-#         self.has_history = has_history
-
-#     def classify(self) -> IntentClassification:
-#         """Return the structured intent classification."""
-#         prompt = f"""You are an intent classifier for GitContext, a code repository question-answering application.
-
-# Classify the user's message into exactly one of these categories:
-
-# 1. greeting:
-#    Greetings and ordinary social conversation that do not require repository retrieval or previous conversation history.
-
-# 2. history_current_repo:
-#    Questions that require repository retrieval, previous conversation context, or both.
-#    Examples:
-#    - "Explain the function we discussed earlier"
-#    - "Compare this module with the one you mentioned before."
-#    - "What does the function load_data() do in this repository?"
-
-# 3. clarification:
-#    Messages that cannot be routed confidently because the necessary reference or context is missing or genuinely ambiguous (e.g., referring to an earlier message when previous conversation is not available).
-
-# Important rules:
-# - A greeting followed by a repository question is NOT a greeting (route to history_current_repo).
-# - If the user refers to previous conversation but `Previous conversation is available` is False, route to clarification.
-# - Return only the structured classification.
-
-# Previous conversation is available: {self.has_history}
-
-# User message:
-# {self.query}
-# """
-
-#         with logfire.span(
-#             "Classify user intent",
-#             query=self.query,
-#             has_history=self.has_history,
-#         ) as span:
-#             structured_llm = self.llm.with_structured_output(IntentClassification)
-#             try:
-#                 result = structured_llm.invoke(prompt)
-#                 classification = cast(IntentClassification, result)   
-#                 # Attach the result directly to the span so it's filterable in Logfire
-#                 span.set_attribute("intent", classification.intent)
-#                 return classification
-#             except Exception as error:
-#                 raise RuntimeError(
-#                     f"Intent classification failed: {error}"
-#                 ) from error
-
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, cast
 import logfire
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
@@ -117,6 +27,38 @@ class PlannerDecision(BaseModel):
     )
 
 
+def to_langchain_messages(messages: list[dict[str, str]]) -> list[BaseMessage]:
+    """Convert raw history dictionaries into LangChain BaseMessage instances."""
+    lc_messages: list[BaseMessage] = []
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content", "")
+        if role == "user":
+            lc_messages.append(HumanMessage(content=content))
+        elif role == "assistant":
+            lc_messages.append(AIMessage(content=content))
+    return lc_messages
+
+
+CLASSIFY_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            (
+                "You are an intelligent Assistant Planner and Query Rewriter for GitContext, "
+                "a code repository question-answering application.\n\n"
+                "Analyze the conversation history and the latest user message to make a routing decision.\n\n"
+                "Task instructions:\n"
+                "1. If the latest message is a greeting, pleasantry, or general question about GitContext itself that requires no repository code files, output intent as 'conversational'.\n"
+                "2. If it is a question about code, files, implementation details, commits, pull requests, or a follow-up referencing code discussed earlier, output intent as 'repository' AND rewrite the latest message into a standalone, fully-resolved search query with essential technical keywords."
+            ),
+        ),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{query}"),
+    ]
+)
+
+
 class ClassifyIntent:
     """Classify intent and rewrite queries for GitContext."""
 
@@ -135,48 +77,25 @@ class ClassifyIntent:
         self.query = query.strip()
         self.llm = llm
 
-    @logfire.instrument("Classify intent and rewrite query")
     def classify(self) -> PlannerDecision:
-        # Build conversation history string for the prompt
-        history_str = ""
-        for msg in self.messages:
-            role = "User" if msg.get("role") == "user" else "Assistant"
-            history_str += f"{role}: {msg.get('content', '')}\n"
-
-        system_prompt = (
-            "You are an intelligent Assistant Planner and Query Rewriter for GitContext, "
-            "a code repository question-answering application.\n\n"
-            "Analyze the conversation history and the latest user message to make a routing decision."
-        )
-
-        user_prompt = f"""
-CONVERSATION HISTORY:
-{history_str if history_str else "No previous conversation."}
-
-LATEST USER MESSAGE:
-"{self.query}"
-
-Task:
-1. If the latest message is a greeting, pleasantry, or general question about GitContext itself that requires no repository code files, output intent as 'conversational'.
-2. If it is a question about code, files, implementation details, commits, pull requests, or a follow-up referencing code discussed earlier, output intent as 'repository' AND rewrite the latest message into a standalone, fully-resolved search query.
-"""
-
-        lc_messages: list[BaseMessage] = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt),
-        ]
-
-        structured_llm = self.llm.with_structured_output(PlannerDecision)
-        try:
-            result = structured_llm.invoke(lc_messages)
-            if not isinstance(result, PlannerDecision):
-                raise TypeError("Expected PlannerDecision from structured output.")
-            
-            logfire.info(
-                "Intent: {intent} | Rewritten Query: {query}",
-                intent=result.intent,
-                query=result.search_query,
-            )
-            return result
-        except Exception as error:
-            raise RuntimeError(f"Intent classification failed: {error}") from error
+        question = self.query
+        with logfire.span("Classify intent and rewrite query",query = question) as span:
+            structured_llm = self.llm.with_structured_output(PlannerDecision)
+            chain = CLASSIFY_PROMPT | structured_llm
+            try:
+                result = chain.invoke(
+                    {
+                        "history": to_langchain_messages(self.messages),
+                        "query":  question,
+                    }
+                )
+                if not isinstance(result, PlannerDecision):
+                    raise TypeError("Expected PlannerDecision from structured output.")
+                logfire.info(
+                    "Intent: {intent} | Rewritten Query: {query}",
+                    intent=result.intent,
+                    query=result.search_query,
+                )
+                return result
+            except Exception as error:
+                raise RuntimeError(f"Intent classification failed: {error}") from error

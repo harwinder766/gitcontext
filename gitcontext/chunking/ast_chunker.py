@@ -88,7 +88,7 @@ def symbol_start(node, lines, cursor):
     """First line of a function or class: its decorators and the comment lines right above it."""
     start = min([node.lineno] + [d.lineno for d in node.decorator_list])
  
-    while start > cursor and lines[start - 2].strip().startswith("#"):
+    while start > max(cursor, 1) and lines[start - 2].strip().startswith("#"):
         start -= 1
  
     return start

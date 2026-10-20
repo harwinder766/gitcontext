@@ -29,7 +29,10 @@ def create_embedding_model() -> Embeddings:
             )
 
         try:
-            return HuggingFaceEmbeddings(model_name=embedding_model)
+            return HuggingFaceEmbeddings(
+                model_name=embedding_model,
+                encode_kwargs={"normalize_embeddings": True},
+            )
         except Exception as e:
             raise RuntimeError(
                 f"Failed to create embedding model '{embedding_model}': {e}"

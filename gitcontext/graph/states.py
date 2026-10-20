@@ -9,6 +9,7 @@ class ConversationState(TypedDict, total=False):
     thread_id: str
     repo_name: str
     question: str
+    current_query: str
     messages: list[dict[str, Any]]
     intent: str
     retrieved_documents: list[dict[str, Any]]
