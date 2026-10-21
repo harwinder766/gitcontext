@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Literal, cast
 import logfire
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 
@@ -66,7 +66,7 @@ class ClassifyIntent:
         self,
         messages: list[dict[str, str]],
         query: str,
-        llm: ChatOpenAI,
+        llm: BaseChatModel,
     ) -> None:
         if not query or not query.strip():
             raise ValueError("Query must be a non-empty string.")

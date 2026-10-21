@@ -6,9 +6,9 @@ from typing import Any
 
 from dotenv import load_dotenv
 from langchain_core.embeddings import Embeddings
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
 import logfire
 from pydantic import BaseModel, Field
 
@@ -107,7 +107,7 @@ class RAG:
     def __init__(
         self,
         query: str,
-        llm: ChatOpenAI,
+        llm: BaseChatModel,
         question: str | None = None,
         total_k: int = 30,
         top_k: int = 10,
