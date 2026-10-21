@@ -44,47 +44,47 @@
 # def about():
 #     return {"message": "This is a FastAPI application."}
 
-import ast
+# import ast
 
-source = """
-class Name:
-    def get_name(self):
-        return "Alex"
+# source = """
+# class Name:
+#     def get_name(self):
+#         return "Alex"
 
-class Solution:
-    '''Given a binary tree, find the maximum path sum.'''
-    def maxPathSum(self, root: Optional[TreeNode]) -> int:
+# class Solution:
+#     '''Given a binary tree, find the maximum path sum.'''
+#     def maxPathSum(self, root: Optional[TreeNode]) -> int:
         
-        m_sum = [float('-inf')]
-        self.calc_sum(root, m_sum)
-        return m_sum[0]
+#         m_sum = [float('-inf')]
+#         self.calc_sum(root, m_sum)
+#         return m_sum[0]
 
-    def calc_sum(self, node, m_sum):
-        if node is None:
-            return 0
-        l_sum = max(0, self.calc_sum(node.left,m_sum))
-        r_sum = max(0, self.calc_sum(node.right,m_sum))
+#     def calc_sum(self, node, m_sum):
+#         if node is None:
+#             return 0
+#         l_sum = max(0, self.calc_sum(node.left,m_sum))
+#         r_sum = max(0, self.calc_sum(node.right,m_sum))
     
-        m_sum[0] = max(m_sum[0], l_sum + r_sum + node.val)
-        return max(l_sum, r_sum) + node.val
-    """
+#         m_sum[0] = max(m_sum[0], l_sum + r_sum + node.val)
+#         return max(l_sum, r_sum) + node.val
+#     """
 
-tree = ast.parse(source)
-lines = source.splitlines()
+# tree = ast.parse(source)
+# lines = source.splitlines()
 
-for node in tree.body:
-    if isinstance(node, ast.ClassDef):
-        # print(f"Class: {node.name}")
-        for sub_node in node.body:
-            if isinstance(sub_node, ast.FunctionDef):
-                start = sub_node.lineno - 1
-                end = sub_node.end_lineno
+# for node in tree.body:
+#     if isinstance(node, ast.ClassDef):
+#         # print(f"Class: {node.name}")
+#         for sub_node in node.body:
+#             if isinstance(sub_node, ast.FunctionDef):
+#                 start = sub_node.lineno - 1
+#                 end = sub_node.end_lineno
 
-                chunk_text = "\n".join(lines[start:end])
+#                 chunk_text = "\n".join(lines[start:end])
 
-                print(f"Class: {node.name}, Function: {sub_node.name}")
-                print(chunk_text)
-                print("-" * 30)
+#                 print(f"Class: {node.name}, Function: {sub_node.name}")
+#                 print(chunk_text)
+#                 print("-" * 30)
         # start = node.lineno - 1
         # end = node.end_lineno
 
@@ -153,3 +153,13 @@ for node in tree.body:
 #         print(f"Function: {node.name}")
 #         print(chunk_text)
 #         print("-" * 30)
+
+import deepeval
+from deepeval.synthesizer import Synthesizer
+
+synthesizer = Synthesizer()
+goldens = synthesizer.generate_goldens_from_docs(
+    document_paths=["gitcontext/generation/generation.py"], # Replace with your file
+    include_expected_output=True
+)
+print(goldens)

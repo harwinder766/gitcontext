@@ -1,0 +1,47 @@
+[
+  {
+    "id": "7be286a2-5ab3-4e00-af3d-60469ff06131",
+    "input": "How is the ConversationState class structured in the GitContext codebase, and what fields does it include?",
+    "expected_output": "The `ConversationState` class in `gitcontext/graph/states.py` is a `TypedDict` with `total=False`, meaning not all fields are required. It includes the following optional fields: `thread_id` (str), `repo_name` (str), `question` (str), `current_query` (str), `messages` (list of dict[str, Any]), `intent` (str), `retrieved_documents` (list of dict[str, Any]), `answer` (str), `sources` (list of dict[str, Any]), and `error` (str or None). It is designed to carry serializable state between graph nodes and checkpoints.",
+    "context": [
+      "File: gitcontext/graph/states.py\n\nfrom __future__ import annotations\n\nfrom typing import Any, TypedDict\n\n\nclass ConversationState(TypedDict, total=False):\n    \"\"\"Serializable state carried between graph nodes and checkpoints.\"\"\"\n\n    thread_id: str\n    repo_name: str\n    question: str\n    current_query: str\n    messages: list[dict[str, Any]]\n    intent: str\n    retrieved_documents: list[dict[str, Any]]\n    answer: str\n    sources: list[dict[str, Any]]\n    error: str | None"
+    ],
+    "source_file": "gitcontext/graph/states.py"
+  },
+  {
+    "id": "d178963b-caa6-42fe-8d79-af5598f7d6a7",
+    "input": "How does the CommitIngestion class validate its constructor arguments, and what happens if an invalid repo_path or max_commits value is provided?",
+    "expected_output": "The CommitIngestion class validates its constructor arguments by checking two conditions: 1) If `repo_path` is empty or None, it raises a `ValueError` with the message 'Repository path cannot be empty.' 2) If `max_commits` is provided and is a negative integer, it raises a `ValueError` with the message 'max_commits must be zero or a positive integer.' No other constructor arguments are validated in the provided code snippet.",
+    "context": [
+      "File: gitcontext/ingestion/commit_ingestion.py\n\nclass CommitIngestion:\n    def __init__(\n        self,\n        repo_path: str,\n        since: datetime | None = None,\n        to: datetime | None = None,\n        from_commit: str | None = None,\n        to_commit: str | None = None,\n        from_tag: str | None = None,\n        to_tag: str | None = None,\n        only_commits: list[str] | None = None,\n        only_in_branch: list[str] | None = None,\n        only_authors: list[str] | None = None,\n        only_modifications_with_file_types: list[str] | None = None,\n        repo_name: str | None = None,\n        max_commits: int | None = None,\n    ):\n        if not repo_path:\n            raise ValueError(\"Repository path cannot be empty.\")\n        if max_commits is not None and max_commits < 0:\n            raise ValueError(\"max_commits must be zero or a positive integer.\")"
+    ],
+    "source_file": "gitcontext/ingestion/commit_ingestion.py"
+  },
+  {
+    "id": "e476f277-2e96-42b7-ba04-3b9e94ee187f",
+    "input": "How does the file discovery mechanism in GitContext exclude certain directories during the ingestion process?",
+    "expected_output": "The file discovery mechanism in GitContext excludes directories by checking each part of a file's relative path against a predefined set of excluded directories (`EXCLUDED_DIRS`). The function `_is_excluded(file_path: Path, repo_path: Path) -> bool` performs this check by:\n1. Computing the relative path of the file with respect to the repository root (`file_path.relative_to(repo_path)`).\n2. Iterating through each path component (`parts`) of the relative path.\n3. Returning `True` if any component matches an entry in `EXCLUDED_DIRS` (e.g., `.git`, `__pycache__`, `venv`) or ends with `.egg-info`.\n4. Returning `False` if none of the components are excluded. This ensures files in directories like `.git` or `node_modules` are skipped during ingestion.",
+    "context": [
+      "File: gitcontext/ingestion/discovery.py\n\nfrom pathlib import Path\n\nimport logfire\nfrom langchain_core.documents import Document\n\n# Directories to skip during file discovery.\n# These never contain source code or documentation we want to index.\nEXCLUDED_DIRS: set[str] = {\n    \".git\",\n    \"__pycache__\",\n    \"venv\",\n    \".venv\",\n    \"node_modules\",\n    \".tox\",\n    \".eggs\",\n    \".mypy_cache\",\n    \".ruff_cache\",\n    \".pytest_cache\",\n    \".nox\",\n    \"dist\",\n    \"build\",\n}\n\n# File extensions we want to process.\n# Python source files and common documentation formats.\nSUPPORTED_EXTENSIONS: set[str] = {\n    \".py\",\n    \".md\",\n    \".rst\",\n    \".txt\",\n}\n\n\ndef _is_excluded(file_path: Path, repo_path: Path) -> bool:\n    \"\"\"Check if a file path is inside an excluded directory.\"\"\"\n    relative = file_path.relative_to(repo_path)\n    for part in relative.parts:\n        if part in EXCLUDED_DIRS:\n            return True\n        if part.endswith(\".egg-info\"):\n            return True\n    return False\n\n\n@logfire.instrument(\"Discover repository files\")"
+    ],
+    "source_file": "gitcontext/ingestion/discovery.py"
+  },
+  {
+    "id": "cc4ba004-cf5b-4d6a-b36b-99366f24cc6c",
+    "input": "How does the PullRequestIngestion class handle authentication for GitHub API calls, and what happens if no token is provided?",
+    "expected_output": "The PullRequestIngestion class handles authentication by accepting an optional `token` parameter in its constructor. If no token is provided, it falls back to reading the `GITHUB_TOKEN` environment variable. If neither is available, it raises a `ValueError` with the message: 'GitHub token is missing. Set GITHUB_TOKEN in your .env file.' The token is then used to authenticate with the GitHub API via `Github(auth=Auth.Token(token))`.",
+    "context": [
+      "File: gitcontext/ingestion/pr_ingestion.py\n\nclass PullRequestIngestion:\n    \"\"\"Fetch pull requests of one GitHub repository as Documents.\"\"\"\n\n    def __init__(\n        self,\n        repo_full_name: str,\n        token: str | None = None,\n        state: str = \"all\",\n        max_prs: int = 50,\n    ):\n        if not repo_full_name or \"/\" not in repo_full_name:\n            raise ValueError(\"repo_full_name must look like 'owner/repo'.\")\n\n        token = token or os.getenv(\"GITHUB_TOKEN\")\n        if not token:\n            raise ValueError(\n                \"GitHub token is missing. Set GITHUB_TOKEN in your .env file.\"\n            )\n\n        self.repo_full_name = repo_full_name\n        self.state = state\n        self.max_prs = max_prs\n\n        # GitHub API calls are synchronous; keep this class synchronous.\n        self.repo = Github(auth=Auth.Token(token)).get_repo(repo_full_name)\n\n    @logfire.instrument(\"Ingest pull requests\")\n    def pulls_traverse(self) -> list[Document]:\n        \"\"\"Fetch pull requests and convert their content into Documents.\"\"\"\n        documents: list[Document] = []\n        processed_prs = 0\n        skipped_comments = 0"
+    ],
+    "source_file": "gitcontext/ingestion/pr_ingestion.py"
+  },
+  {
+    "id": "cd9c041e-52c5-419e-afd0-0a799f9b186f",
+    "input": "How does the SupabaseVectorStore class handle the case when the SUPABASE_DATABASE_URL environment variable is not set during initialization?",
+    "expected_output": "The SupabaseVectorStore class raises a ValueError with the message 'SUPABASE_DATABASE_URL is not set in the environment.' if the SUPABASE_DATABASE_URL environment variable is missing when the __init__ method is called. This is checked immediately after attempting to retrieve the variable using os.getenv(\"SUPABASE_DATABASE_URL\").",
+    "context": [
+      "File: gitcontext/vectorstore/supabase_store.py\n\nclass SupabaseVectorStore:\n    def __init__(self, embedding_model):\n        database_url = os.getenv(\"SUPABASE_DATABASE_URL\")\n\n        if not database_url:\n            raise ValueError(\n                \"SUPABASE_DATABASE_URL is not set in the environment.\"\n            )\n\n        self.store = PGVector(\n            embeddings=embedding_model,\n            collection_name=\"gitcontext_documents\",\n            connection=database_url,\n            use_jsonb=True,\n        )\n\n    def add_documents(self, documents: list[Document]) -> list[str]:\n        '''Add documents to Supabase.'''\n        return self.store.add_documents(documents)\n\n    def load_documents(self) -> list[Document]:\n        \"\"\"Load all stored chunk documents from this PGVector collection.\"\"\"\n        with self.store._make_sync_session() as session:\n            collection = self.store.get_collection(session)\n\n            if collection is None:\n                return []"
+    ],
+    "source_file": "gitcontext/vectorstore/supabase_store.py"
+  }
+]

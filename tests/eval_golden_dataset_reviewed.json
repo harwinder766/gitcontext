@@ -1,0 +1,119 @@
+[
+  {
+    "id": "adfbc261-fe65-4f26-a1ed-ebff437b7556",
+    "input": "How does the GitContext API initialize its embedding model, guardrails, cross-encoder model, and LLM during application startup?",
+    "expected_output": "The FastAPI application's `lifespan` async context manager in `gitcontext/api/main.py` initializes process-wide services during startup. It calls `create_embedding_model()`, `create_guardrail_scanners()`, `load_cross_encoder_model()`, and `create_llm()`, storing the results on `application.state` as `embedding_model`, `guardrails`, `cross_encoder_model`, and `llm`. The initialization is wrapped in a `logfire.span`. It then checks `SUPABASE_DATABASE_URL` and raises a `RuntimeError` if it is missing because persistent conversation memory requires it.",
+    "context": [
+      "File: gitcontext/api/main.py\n\n_INGESTION_STATUS: dict[str, dict[str, object]] = {}\n\n\n@asynccontextmanager\nasync def lifespan(application: FastAPI):\n    \"\"\"Initialize process-wide services once for the API lifetime.\"\"\"\n    with logfire.span(\"Application startup (lifespan)\"):\n        application.state.embedding_model = create_embedding_model()\n        application.state.guardrails = create_guardrail_scanners()\n        application.state.cross_encoder_model = load_cross_encoder_model()\n        application.state.llm = create_llm()\n\n        database_url = (os.getenv(\"SUPABASE_DATABASE_URL\") or \"\").strip()\n        if not database_url:\n            raise RuntimeError(\n                \"SUPABASE_DATABASE_URL is required for persistent conversation memory.\"\n            )"
+    ],
+    "source_file": "gitcontext/api/main.py"
+  },
+  {
+    "id": "b86683a0-a836-43fd-9bb3-c303ec451545",
+    "input": "How does `create_guardrail_scanners()` configure GitContext's input and output scanners?",
+    "expected_output": "The `create_guardrail_scanners()` function in `gitcontext/api/guardrails.py` initializes three input scanners: `InvisibleText()`, `TokenLimit(limit=2000)`, and `PromptInjection(threshold=0.80, use_onnx=True)`. It initializes one output scanner: `Toxicity(threshold=0.80, use_onnx=True)`. It returns a `GuardrailScanners` instance containing these two lists. The initialization is wrapped in a `logfire.span`.",
+    "context": [
+      "File: gitcontext/api/guardrails.py\n\nclass GuardrailScanners:\n    \"\"\"Holds initialized input and output scanners.\"\"\"\n\n    input_scanners: list[Any]\n    output_scanners: list[Any]\n\n\ndef create_guardrail_scanners() -> GuardrailScanners:\n    \"\"\"Initialize LLM Guard scanners once at application startup.\"\"\"\n    with logfire.span(\"Load LLM Guard scanners\"):\n        input_scanners = [\n            InvisibleText(),\n            TokenLimit(limit=2000),\n            PromptInjection(threshold=0.80, use_onnx=True),\n        ]\n        \n        # Keep only Toxicity or an empty list [] for output scanners\n        output_scanners = [\n            Toxicity(threshold=0.80, use_onnx=True),\n        ]\n        \n        return GuardrailScanners(\n            input_scanners=input_scanners,\n            output_scanners=output_scanners,\n        )"
+    ],
+    "source_file": "gitcontext/api/guardrails.py"
+  },
+  {
+    "id": "054e3e54-4e80-4e8b-9694-17ae754a32e3",
+    "input": "How does `create_llm()` configure LiteLLM caching, and how is that configuration related to provider API keys?",
+    "expected_output": "`create_llm()` reads `LITELLM_CACHE_TYPE` (default `local`) and `LITELLM_CACHE_TTL` (default `3600` seconds). If the TTL cannot be parsed as an integer, it falls back to `3600`. It initializes the global LiteLLM cache with `Cache(type=cache_type, ttl=cache_ttl)` before reading provider API keys such as `GROQ_API_KEY`, `GEMINI_API_KEY`, and `XKIRO_API_KEY`. In the shown code, cache settings and provider credentials are configured separately; the snippet does not show the full provider-selection logic.",
+    "context": [
+      "File: gitcontext/generation/llm.py\n\ndef create_llm(temperature: float | None = None) -> BaseChatModel:\n    \"\"\"Initialize LiteLLM Router with primary/fallback models and caching, wrapped in ChatLiteLLMRouter.\"\"\"\n    if temperature is None:\n        try:\n            temperature = float(os.getenv(\"LLM_TEMPERATURE\", \"0.1\"))\n        except (ValueError, TypeError):\n            temperature = 0.1\n\n    cache_type = os.getenv(\"LITELLM_CACHE_TYPE\", \"local\").strip()\n    try:\n        cache_ttl = int(os.getenv(\"LITELLM_CACHE_TTL\", \"3600\"))\n    except (ValueError, TypeError):\n        cache_ttl = 3600\n\n    # Initialize LiteLLM cache\n    litellm.cache = Cache(type=cache_type, ttl=cache_ttl)\n\n    groq_api_key = (os.getenv(\"GROQ_API_KEY\") or \"\").strip()\n    gemini_api_key = (os.getenv(\"GEMINI_API_KEY\") or \"\").strip()\n    xkiro_api_key = (os.getenv(\"XKIRO_API_KEY\") or \"\").strip()\n\n    # Collect all configured providers in priority order\n    configured_providers: list[dict[str, Any]] = []"
+    ],
+    "source_file": "gitcontext/generation/llm.py"
+  },
+  {
+    "id": "bda76b8d-5779-4301-8700-42fae9f01932",
+    "input": "How does `PlannerDecision` represent conversational versus repository intent, and how is `search_query` intended to be formed?",
+    "expected_output": "`PlannerDecision` is a Pydantic model with an `intent` field limited to `conversational` or `repository`, plus a `search_query` field. Its field descriptions define `conversational` for greetings, pleasantries, or general questions about GitContext, and `repository` for questions about code, files, commits, pull requests, or technical follow-ups. For repository intent, `search_query` should be rewritten as a standalone, keyword-rich query that resolves pronouns using conversation history. For conversational intent, it should repeat the latest user message. This model defines the expected structured output; the shown snippet does not itself implement the classification algorithm.",
+    "context": [
+      "File: gitcontext/generation/classify_intent.py\n\nclass PlannerDecision(BaseModel):\n    \"\"\"Router and query rewriter for GitContext.\"\"\"\n\n    intent: Literal[\"conversational\", \"repository\"] = Field(\n        description=(\n            \"'conversational' for greetings, pleasantries, or general questions about \"\n            \"what GitContext is. 'repository' for any question about code, files, \"\n            \"commits, PRs, or follow-ups on previous technical answers.\"\n        )\n    )\n    search_query: str = Field(\n        description=(\n            \"If intent is 'repository', rewrite the user's message into a standalone, \"\n            \"keyword-rich search query resolving any pronouns (it, that, this function) \"\n            \"using the conversation history. If 'conversational', simply repeat the user's latest message.\"\n        )\n    )"
+    ],
+    "source_file": "gitcontext/generation/classify_intent.py"
+  },
+  {
+    "id": "8469801c-c8e3-4fba-8696-dcc20da00062",
+    "input": "How does `to_langchain_messages()` convert raw conversation-history dictionaries into LangChain messages?",
+    "expected_output": "The function iterates over the input list of dictionaries and reads each message's `role` and `content` (defaulting missing content to an empty string). For `role == \"user\"`, it creates a `HumanMessage`; for `role == \"assistant\"`, it creates an `AIMessage`. Other roles are ignored. It returns the resulting list of `BaseMessage` objects. The supplied code does not show additional validation for missing or unsupported roles.",
+    "context": [
+      "File: gitcontext/generation/generation.py\n\ndef to_langchain_messages(messages: list[dict[str, Any]]) -> list[BaseMessage]:\n    \"\"\"Convert raw history dictionaries into LangChain BaseMessage instances.\"\"\"\n    lc_messages: list[BaseMessage] = []\n    for msg in messages:\n        role = msg.get(\"role\")\n        content = msg.get(\"content\", \"\")\n        if role == \"user\":\n            lc_messages.append(HumanMessage(content=content))\n        elif role == \"assistant\":\n            lc_messages.append(AIMessage(content=content))\n    return lc_messages\n\n\nRAG_SYSTEM_INSTRUCTIONS = \"\"\"You are GitContext, an AI assistant that helps developers understand code repositories.\n\nYour task is to answer the user's question accurately using only the provided context from the repository."
+    ],
+    "source_file": "gitcontext/generation/generation.py"
+  },
+  {
+    "id": "43c385a1-06e1-4ff8-abf0-44835d2495e7",
+    "input": "What is the purpose of `SourceReference` in `gitcontext/generation/generation.py`, and what does it inherit from?",
+    "expected_output": "The provided code shows `SourceReference` as a class that inherits from `BaseModel` and has the docstring `Metadata about a source document.` The supplied context does not show its fields, so those cannot be described from this snippet alone.",
+    "context": [
+      "File: gitcontext/generation/generation.py\n\nclass SourceReference(BaseModel):\n    \"\"\"Metadata about a source document.\"\"\""
+    ],
+    "source_file": "gitcontext/generation/generation.py"
+  },
+  {
+    "id": "0fbb273e-4091-4fa5-99ca-c1a100494b21",
+    "input": "How does the `_route` function in `gitcontext/graph/graph.py` route different intent values?",
+    "expected_output": "The `_route` function reads `intent` from the conversation state. It routes `conversational` and `greeting` to the `greeting` node; it routes `repository` and `history_current_repo` to the `repository` node. Any other value defaults to `greeting`. It logs the intent and selected target node with `logfire.debug`.",
+    "context": [
+      "File: gitcontext/graph/graph.py\n\nfrom __future__ import annotations\n\nfrom collections.abc import Callable\nfrom typing import Any\n\nimport logfire\nfrom langgraph.checkpoint.memory import MemorySaver\nfrom langgraph.graph import END, START, StateGraph\nfrom langgraph.graph.state import CompiledStateGraph\nfrom sentence_transformers import CrossEncoder\n\nfrom gitcontext.generation.generation import RAG\nfrom gitcontext.graph.nodes import (\n    classify_intent_node,\n    greeting_node,\n    repository_node,\n)\nfrom gitcontext.graph.states import ConversationState\n\n\ndef _route(state: ConversationState) -> str:\n    intent = state.get(\"intent\")\n    if intent in (\"conversational\", \"greeting\"):\n        route = \"greeting\"\n    elif intent in (\"repository\", \"history_current_repo\"):\n        route = \"repository\"\n    else:\n        route = \"greeting\"\n\n    logfire.debug(\"Routing graph\", intent=intent, target_node=route)\n    return route\n\n\n@logfire.instrument(\"Build LangGraph workflow\")"
+    ],
+    "source_file": "gitcontext/graph/graph.py"
+  },
+  {
+    "id": "5d188460-c459-4290-984e-09f994b6e918",
+    "input": "How does `_history()` limit conversation history, and does it enforce the assistant-message character limit?",
+    "expected_output": "`_history()` returns the last `MAX_HISTORY_MESSAGES` entries from `state.get(\"messages\", [])`. Since `MAX_HISTORY_MESSAGES = 6`, it returns at most the six most recent messages. Although `MAX_ASSISTANT_HISTORY_CHARS = 1000` is also defined in the shown module, this `_history()` implementation does not enforce that character limit; it only slices the message list.",
+    "context": [
+      "File: gitcontext/graph/nodes.py\n\nfrom __future__ import annotations\n\nimport re\nfrom collections.abc import Callable\nfrom typing import Any\n\nimport logfire\nfrom langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage\n\nfrom gitcontext.generation.classify_intent import ClassifyIntent, PlannerDecision\nfrom gitcontext.generation.generation import RAG, RAGResponse\nfrom gitcontext.generation.normal_message import Answer, NormalMessage\nfrom gitcontext.graph.states import ConversationState\n\nMAX_HISTORY_MESSAGES = 6\nMAX_ASSISTANT_HISTORY_CHARS = 1000\n\n\ndef _history(state: ConversationState) -> list[dict[str, Any]]:\n    return list(state.get(\"messages\", []))[-MAX_HISTORY_MESSAGES:]"
+    ],
+    "source_file": "gitcontext/graph/nodes.py"
+  },
+  {
+    "id": "2c247d16-fe69-4450-99ea-d6273736f5cf",
+    "input": "How does `HybridRetriever` validate its initialization arguments, and what does the provided code establish about its RRF setup?",
+    "expected_output": "`HybridRetriever.__init__()` raises `ValueError` if `documents` is empty or if any of `bm25_k`, `vector_k`, `final_k`, or `rrf_k` is less than or equal to zero. The defaults shown are `bm25_k=30`, `vector_k=30`, `final_k=10`, and `rrf_k=60`. It creates a `BM25Retriever` with `bm25_k` and stores the vector store and RRF-related parameters. The supplied snippet establishes the intended hybrid BM25/vector retrieval setup, but it does not show the actual fusion calculation or sorting implementation.",
+    "context": [
+      "File: gitcontext/retrieval/hybrid_retriever.py\n\nclass HybridRetriever:\n    \"\"\"Combine BM25 and Supabase vector retrieval using RRF.\"\"\"\n\n    def __init__(\n        self,\n        documents: list[Document],\n        vector_store: SupabaseVectorStore,\n        bm25_k: int = 30,\n        vector_k: int = 30,\n        final_k: int = 10,\n        rrf_k: int = 60,\n    ) -> None:\n        if not documents:\n            raise ValueError(\"Documents cannot be empty.\")\n        if bm25_k <= 0:\n            raise ValueError(\"bm25_k must be greater than 0.\")\n        if vector_k <= 0:\n            raise ValueError(\"vector_k must be greater than 0.\")\n        if final_k <= 0:\n            raise ValueError(\"final_k must be greater than 0.\")\n        if rrf_k <= 0:\n            raise ValueError(\"rrf_k must be greater than 0.\")\n\n        self._documents = list(documents)\n        self._bm25_k = bm25_k\n        self._bm25 = BM25Retriever.from_documents(\n            self._documents,\n            k=bm25_k,\n        )\n\n        self._vector_store = vector_store\n        self._vector_k = vector_k\n        self._final_k = final_k\n        self._rrf_k = rrf_k"
+    ],
+    "source_file": "gitcontext/retrieval/hybrid_retriever.py"
+  },
+  {
+    "id": "1d88acc6-4743-4489-8acd-36bc5b589734",
+    "input": "How does `CrossEncoderReranker.rerank()` handle inputs, score documents, and order results?",
+    "expected_output": "`rerank()` raises `ValueError` if the query is empty or contains only whitespace, and returns an empty list if no documents are supplied. Otherwise, it creates `(query, document.page_content)` pairs and passes them to `self.model.predict()`. It zips the documents with their scores and sorts them in descending score order. The shown excerpt then initializes a results list, but cuts off before the final selection logic; the class docstring says the method returns the most relevant documents, and `top_n` is configured in the constructor, but the provided snippet does not show the exact final slicing.",
+    "context": [
+      "File: gitcontext/reranking/reranker.py\n\nclass CrossEncoderReranker:\n    \"\"\"Rerank retrieved documents according to query relevance.\"\"\"\n\n    def __init__(\n        self,\n        model : CrossEncoder,\n        top_n: int = 5,\n    ) -> None:\n        if top_n <= 0:\n            raise ValueError(\"top_n must be greater than zero\")\n\n        self.top_n = top_n\n        self.model = model\n\n    @logfire.instrument(\"Rerank retrieved documents\")\n    def rerank(\n        self,\n        query: str,\n        documents: list[Document],\n    ) -> list[Document]:\n        \"\"\"Return the most relevant documents in ranked order.\"\"\"\n\n        if not query.strip():\n            raise ValueError(\"Query must be a non-empty string.\")\n\n        if not documents:\n            return []\n\n        pairs = [\n            (query, document.page_content)\n            for document in documents\n        ]\n        with logfire.span(\"Score documents with CrossEncoder\",document_count=len(pairs)):\n            scores = self.model.predict(pairs)\n\n        ranked_results = sorted(\n            zip(documents, scores),\n            key=lambda item: float(item[1]),\n            reverse=True,\n        )\n\n        results = []"
+    ],
+    "source_file": "gitcontext/reranking/reranker.py"
+  },
+  {
+    "id": "38f22e56-4603-4858-8a89-cc4303bf2c96",
+    "input": "How does `_chunk_commit_document()` extract a diff, build its header, and handle a missing `COMMIT_DIFF_MARKER`?",
+    "expected_output": "`_chunk_commit_document()` partitions `document.page_content` at `COMMIT_DIFF_MARKER`. If the marker is absent, it uses the entire page content as the diff. It builds a header containing the commit hash, a trimmed commit message truncated to `MAX_COMMIT_MSG_CHARS`, the source or file path, and the change type. It reserves space for this header by calculating `body_size = max(200, chunk_size - len(header) - 30)` and caps overlap at `body_size // 4`. It then uses `RecursiveCharacterTextSplitter` to split the diff and prepends the header to each output chunk.",
+    "context": [
+      "File: gitcontext/chunking/splitter.py\n\ndef _chunk_commit_document(\n    document: Document, chunk_size: int, chunk_overlap: int\n) -> list[Document]:\n    \"\"\"Split only the diff, and put a short identity header on every chunk.\"\"\"\n    meta = document.metadata\n    _, sep, diff = document.page_content.partition(COMMIT_DIFF_MARKER)\n    if not sep:  # unexpected format, fall back to normal splitting\n        diff = document.page_content\n\n    header = (\n        f\"Commit hash: {meta.get('commit_hash')}\\n\"\n        f\"Commit message: {(meta.get('commit_msg') or '')[:MAX_COMMIT_MSG_CHARS].strip()}\\n\"\n        f\"File path: {meta.get('source') or meta.get('file_path')}\\n\"\n        f\"Change type: {meta.get('change_type')}\"\n    )\n\n    # leave room for the header so each chunk stays near chunk_size\n    body_size = max(200, chunk_size - len(header) - 30)\n    body_overlap = min(chunk_overlap, body_size // 4)\n\n    splitter = RecursiveCharacterTextSplitter(\n        chunk_size=body_size, chunk_overlap=body_overlap\n    )\n    parts = splitter.split_text(diff)"
+    ],
+    "source_file": "gitcontext/chunking/splitter.py"
+  },
+  {
+    "id": "ff4241bd-1544-476d-a57e-8b8f5c15442c",
+    "input": "How does `chunk_python_document()` split Python source code, and what happens when parsing fails?",
+    "expected_output": "`chunk_python_document()` parses the source with `ast.parse()`. If parsing raises `SyntaxError` or `ValueError`, it returns `None` so the caller can use a fallback splitter. For valid Python, it uses `collect_pieces()` to identify functions, methods, classes, and code between symbols, then uses `group_lines()` to divide each piece into line ranges. Each chunk contains a header with file/symbol information and line numbers, the source lines, and copied document metadata augmented with symbol and line metadata. `max_chars` guides grouping, but the supplied implementation splits at line boundaries and adds a header, so it does not guarantee every final chunk's total character count is at most `max_chars`.",
+    "context": [
+      "File: gitcontext/chunking/ast_chunker.py\n\ndef chunk_python_document(document, max_chars=1000):\n    \"\"\"Split one Python file (a Document) into chunks.\n \n    Returns None if the file cannot be parsed, so the caller can use the normal splitter.\n    \"\"\"\n    source = document.page_content\n \n    try:\n        tree = ast.parse(source)\n    except (SyntaxError, ValueError):\n        return None\n \n    lines = source.splitlines()\n    path = document.metadata.get(\"source\", \"unknown file\")\n \n    # 1. find the pieces of the file: functions, methods, classes and the code between them\n    pieces = []\n    collect_pieces(tree.body, lines, 1, len(lines), None, max_chars, pieces)\n \n    # 2. turn every piece into one or more chunks (a piece that is too long is cut by lines)\n    chunks = []\n    for kind, name, class_name, start, end, docstring in pieces:\n        groups = group_lines(lines, start, end, max_chars)\n \n        for part, (first, last) in enumerate(groups, start=1):\n            header = make_header(path, kind, name, class_name, first, last, docstring, part, len(groups))\n            code = \"\\n\".join(lines[first - 1:last])\n \n            metadata = dict(document.metadata)"
+    ],
+    "source_file": "gitcontext/chunking/ast_chunker.py"
+  },
+  {
+    "id": "aa0e45af-23f1-4a26-9c28-83b543e5e52e",
+    "input": "How does GitContext process repository data before answering a user query, and how does the query-time workflow use retrieval and citations?",
+    "expected_output": "The README describes an ingestion/indexing pipeline: repository data is ingested, parsed, chunked, embedded, and stored in a vector database. At query time, a user query is handled with hybrid retrieval that combines semantic search and BM25 keyword search; retrieved context is reranked and passed to an LLM, which generates an answer with source citations. The README notes that pull-request support is planned, so the answer should not claim that PR ingestion is fully implemented solely from this README.",
+    "context": [
+      "File: README.md\n\n# GitContext\n\nA codebase intelligence and developer copilot powered by RAG (Retrieval-Augmented Generation).\n\n## What is GitContext?\n\nGitContext lets you connect a Python repository and ask natural language questions about:\n- Source code (functions, classes, modules)\n- Documentation (README, docstrings)\n- Git history (commits, changes)\n- Pull requests (planned)\n\nIt retrieves relevant context using hybrid search (semantic + keyword) and generates answers with source citations using an LLM.\n\n## Project Status\n\n🚧 **Phase 0: Project Setup & Architecture** — In progress\n\nSee [PHASES.md](docs/PHASES.md) for the full development roadmap.\n\n## Architecture\n\n```\nRepository → Ingestion → Parsing → Chunking → Embeddings → Vector DB\n                                                                  ↓\nUser Query → Hybrid Retrieval (Semantic + BM25) → Reranking → LLM → Answer + Citations\n```\n\nSee [ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.\n\n## Quick Start\n\n```bash\n# 1. Clone the repository\ngit clone <repo-url>\ncd rag_project\n\n# 2. Create virtual environment\npython -m venv venv\nsource venv/bin/activate  # Linux/Mac\nvenv\\Scripts\\activate     # Windows"
+    ],
+    "source_file": "README.md"
+  }
+]
