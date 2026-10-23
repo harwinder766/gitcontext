@@ -7,8 +7,6 @@ import logfire
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from sentence_transformers import CrossEncoder
-
 from gitcontext.generation.generation import RAG
 from gitcontext.graph.nodes import (
     classify_intent_node,
@@ -36,7 +34,7 @@ def build_graph(
     *,
     llm: Any,
     embedding_model: Any = None,
-    cross_encoder_model: CrossEncoder | None = None,
+    cross_encoder_model: Any | None = None,
     rag_factory: Callable[..., RAG] = RAG,
     checkpointer: Any | None = None,
 ) -> CompiledStateGraph:

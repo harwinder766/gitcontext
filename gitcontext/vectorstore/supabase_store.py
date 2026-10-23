@@ -1,3 +1,4 @@
+import gc
 import os
 
 from dotenv import load_dotenv
@@ -24,8 +25,10 @@ class SupabaseVectorStore:
         )
 
     def add_documents(self, documents: list[Document]) -> list[str]:
-        '''Add documents to Supabase.'''
-        return self.store.add_documents(documents)
+        '''Add documents to Supabase and trigger garbage collection.'''
+        doc_ids = self.store.add_documents(documents)
+        gc.collect()
+        return doc_ids
 
     def load_documents(self) -> list[Document]:
         """Load all stored chunk documents from this PGVector collection."""

@@ -63,32 +63,32 @@ def test_embedding_model_errors_are_propagated():
         embed_documents([Document(page_content="hello")], FailingEmbeddings())
 
 
-def test_create_embedding_model_uses_configured_huggingface_model(monkeypatch):
-    created_kwargs = {}
+def test_create_embedding_model_uses_jina_when_key_set(monkeypatch):
+    from gitcontext.embeddings.embedder import JinaEmbedding
 
-    class FakeHuggingFaceEmbeddings(FakeEmbeddings):
-        def __init__(self, **kwargs):
-            super().__init__(dimensions=384)
-            created_kwargs.update(kwargs)
-
-    monkeypatch.setattr(
-        "gitcontext.embeddings.embedder.HuggingFaceEmbeddings",
-        FakeHuggingFaceEmbeddings,
-    )
-    monkeypatch.setenv("EMBEDDING_PROVIDER", "huggingface")
-    monkeypatch.setenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    monkeypatch.setenv("JINA_API_KEY", "jina_test_key_123")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
 
     model = create_embedding_model()
-
-    assert isinstance(model, Embeddings)
-    assert created_kwargs == {
-        "model_name": "sentence-transformers/all-MiniLM-L6-v2",
-        "encode_kwargs": {"normalize_embeddings": True},
-    }
+    assert isinstance(model, JinaEmbedding)
+    assert model.api_key == "jina_test_key_123"
 
 
-def test_create_embedding_model_rejects_unsupported_provider(monkeypatch):
-    monkeypatch.setenv("EMBEDDING_PROVIDER", "local")
+def test_create_embedding_model_uses_gemini_when_specified(monkeypatch):
+    from gitcontext.embeddings.embedder import GeminiEmbedding
 
-    with pytest.raises(ValueError, match="Unsupported embedding provider"):
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "google")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini_test_key_456")
+
+    model = create_embedding_model()
+    assert isinstance(model, GeminiEmbedding)
+    assert model.api_key == "gemini_test_key_456"
+
+
+def test_create_embedding_model_raises_without_api_keys(monkeypatch):
+    monkeypatch.setenv("JINA_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "")
+
+    with pytest.raises(ValueError, match="No embedding API key found"):
         create_embedding_model()

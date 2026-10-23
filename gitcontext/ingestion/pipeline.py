@@ -137,4 +137,11 @@ def ingest_repository(
             chunk_count=result["chunks"],
             removed_old_chunk_count=result["removed_old_chunks"],
         )
+        del chunked_documents
+        del documents
+        del commit_documents
+        del pr_documents
+        import gc
+        gc.collect()
+
         return result

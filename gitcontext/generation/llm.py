@@ -36,65 +36,66 @@ def create_llm(temperature: float | None = None) -> BaseChatModel:
     gemini_api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     xkiro_api_key = (os.getenv("XKIRO_API_KEY") or "").strip()
 
-    # Collect all configured providers in priority order
     configured_providers: list[dict[str, Any]] = []
 
-    if xkiro_api_key:
-        xkiro_model = (os.getenv("XKIRO_MODEL")).strip()
-        # LiteLLM requires 'openai/' prefix for OpenAI-compatible custom base URLs
-        if not xkiro_model.startswith("openai/"):
-            xkiro_model = f"openai/{xkiro_model}"
-        xkiro_base_url = os.getenv("XKIRO_BASE_URL").strip()
-        configured_providers.append(
-            {
-                "provider": "xkiro",
-                "litellm_params": {
-                    "model": xkiro_model,
-                    "api_base": xkiro_base_url,
-                    "api_key": xkiro_api_key,
-                },
-            }
-        )
-
+    # 1. Groq Provider (Primary fast free model)
     if groq_api_key:
-        groq_model = os.getenv("GROQ_MODEL", "groq/llama-3.3-70b-versatile").strip()
-        if not groq_model.startswith("groq/"):
-            groq_model = f"groq/{groq_model}"
+        groq_model = (os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile").strip()
+        # Clean up common naming mistakes
+        groq_model = groq_model.replace("groq/", "")
         configured_providers.append(
             {
                 "provider": "groq",
                 "litellm_params": {
-                    "model": groq_model,
+                    "model": f"groq/{groq_model}",
                     "api_key": groq_api_key,
                 },
             }
         )
 
+    # 2. Gemini Provider (Fallback free model)
     if gemini_api_key:
-        gemini_model = os.getenv("GEMINI_MODEL", "gemini/gemini-2.5-flash").strip()
-        if not gemini_model.startswith("gemini/"):
-            gemini_model = f"gemini/{gemini_model}"
+        gemini_model = (os.getenv("GEMINI_MODEL") or "gemini-1.5-flash-latest").strip()
+        # Strip prefixes so LiteLLM resolves the standard Google endpoint properly
+        gemini_model = gemini_model.replace("gemini/", "").replace("models/", "")
         configured_providers.append(
             {
                 "provider": "gemini",
                 "litellm_params": {
-                    "model": gemini_model,
+                    "model": f"gemini/{gemini_model}",
                     "api_key": gemini_api_key,
                 },
             }
         )
 
-    
+    # 3. Custom / Proxy Provider (XKIRO / OpenRouter)
+    if xkiro_api_key:
+        xkiro_model = (os.getenv("XKIRO_MODEL") or "").strip()
+        xkiro_base_url = (os.getenv("XKIRO_BASE_URL") or "").strip()
+
+        if xkiro_model and xkiro_base_url:
+            if not xkiro_model.startswith("openai/"):
+                xkiro_model = f"openai/{xkiro_model}"
+            configured_providers.append(
+                {
+                    "provider": "xkiro",
+                    "litellm_params": {
+                        "model": xkiro_model,
+                        "api_base": xkiro_base_url,
+                        "api_key": xkiro_api_key,
+                    },
+                }
+            )
+
     if not configured_providers:
         raise RuntimeError(
             "None of GROQ_API_KEY, GEMINI_API_KEY, or XKIRO_API_KEY are configured. "
-            "At least one API key is required to initialize the LiteLLM Router."
+            "At least one valid API key is required to initialize the LiteLLM Router."
         )
 
     model_list: list[dict[str, Any]] = []
     fallback_names: list[str] = []
 
-    # First available provider becomes 'gitcontext-primary'; the rest become fallbacks
     for idx, item in enumerate(configured_providers):
         role_name = (
             "gitcontext-primary"
@@ -115,17 +116,16 @@ def create_llm(temperature: float | None = None) -> BaseChatModel:
     )
 
     primary_model = configured_providers[0]["litellm_params"]["model"]
-    fallback_models = [
-        p["litellm_params"]["model"] for p in configured_providers[1:]
-    ]
+    fallback_models = [p["litellm_params"]["model"] for p in configured_providers[1:]]
 
     litellm_router = Router(
         model_list=model_list,
         fallbacks=fallbacks,
-        num_retries=2,
-        timeout=30,
+        timeout=12,
+        num_retries=1,
         cache_responses=True,
-        cooldown_time=5,
+        cooldown_time=60,
+        allowed_fails=1,
     )
 
     logfire.info(

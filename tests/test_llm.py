@@ -11,15 +11,17 @@ def test_create_llm_raises_when_no_api_keys(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("XKIRO_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-    with pytest.raises(RuntimeError, match="Neither GROQ_API_KEY nor OPENAI_API_KEY is configured"):
+    with pytest.raises(RuntimeError, match="None of GROQ_API_KEY, GEMINI_API_KEY, or XKIRO_API_KEY are configured"):
         create_llm()
 
 
-def test_create_llm_with_openai_only(monkeypatch):
+def test_create_llm_with_gemini_only(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test-key")
-    monkeypatch.setenv("OPENAI_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.delenv("XKIRO_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-test-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini/gemini-2.5-flash")
 
     llm = create_llm()
 
@@ -32,8 +34,8 @@ def test_create_llm_with_openai_only(monkeypatch):
     deployments = router.model_list
     assert len(deployments) == 1
     assert deployments[0]["model_name"] == "gitcontext-primary"
-    assert deployments[0]["litellm_params"]["model"] == "openai/gpt-4o-mini"
-    assert deployments[0]["litellm_params"]["api_key"] == "sk-openai-test-key"
+    assert deployments[0]["litellm_params"]["model"] == "gemini/gemini-2.5-flash"
+    assert deployments[0]["litellm_params"]["api_key"] == "gemini-test-key"
     assert not router.fallbacks
     assert router.cache_responses is True
 
@@ -42,6 +44,7 @@ def test_create_llm_with_groq_only(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "gsk-groq-test-key")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("XKIRO_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     llm = create_llm()
 
@@ -57,7 +60,9 @@ def test_create_llm_with_groq_only(monkeypatch):
 
 def test_create_llm_with_both_keys_sets_fallback(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "gsk-groq-test-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-test-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini/gemini-2.5-flash")
+    monkeypatch.delenv("XKIRO_API_KEY", raising=False)
 
     llm = create_llm(temperature=0.2)
 
@@ -73,15 +78,15 @@ def test_create_llm_with_both_keys_sets_fallback(monkeypatch):
     assert deployments[0]["litellm_params"]["model"] == "groq/llama-3.3-70b-versatile"
     assert deployments[0]["litellm_params"]["api_key"] == "gsk-groq-test-key"
 
-    # Fallback should be OpenAI
-    assert deployments[1]["model_name"] == "gitcontext-fallback"
-    assert deployments[1]["litellm_params"]["model"] == "openai/gpt-4o-mini"
-    assert deployments[1]["litellm_params"]["api_key"] == "sk-openai-test-key"
+    # Fallback should be Gemini
+    assert deployments[1]["model_name"] == "gitcontext-fallback-gemini"
+    assert deployments[1]["litellm_params"]["model"] == "gemini/gemini-2.5-flash"
+    assert deployments[1]["litellm_params"]["api_key"] == "gemini-test-key"
 
     # Fallbacks configuration
-    assert router.fallbacks == [{"gitcontext-primary": ["gitcontext-fallback"]}]
-    assert router.num_retries == 2
-    assert router.timeout == 30
+    assert router.fallbacks == [{"gitcontext-primary": ["gitcontext-fallback-gemini"]}]
+    assert router.num_retries == 1
+    assert router.timeout == 10
 
 
 def test_create_llm_configures_caching(monkeypatch):

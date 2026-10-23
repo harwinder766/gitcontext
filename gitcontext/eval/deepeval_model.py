@@ -260,6 +260,7 @@ class GitContextEvalModel(DeepEvalBaseLLM):
         temperature: float = 0.0,
     ) -> None:
         self._temperature = temperature
+        self.model_name = model_name
         super().__init__(model=model_name)
 
     def load_model(self) -> BaseChatModel:
