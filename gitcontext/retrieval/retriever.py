@@ -14,11 +14,12 @@ class Retriever:
 
     def __init__(
         self,
-        k: int,
-        bm25_k: int,
-        vector_k: int,
-        rrf_k: int,
+        k: int = 15,
+        bm25_k: int = 15,
+        vector_k: int = 15,
+        rrf_k: int = 60,
         embedding_model: Embeddings | None = None,
+        auto_refresh: bool = True,
     ) -> None:
         if k <= 0:
             raise ValueError("k must be a positive integer.")
@@ -38,7 +39,14 @@ class Retriever:
         self.vector_store = SupabaseVectorStore(self.embedding_model)
 
         self._hybrid_retriever: HybridRetriever | None = None
-        self.refresh()
+        if auto_refresh:
+            try:
+                self.refresh()
+            except ValueError as error:
+                logfire.warn(
+                    "Initial retriever refresh deferred (database may be empty): {error}",
+                    error=str(error),
+                )
 
     @logfire.instrument("Refresh application retriever")
     def refresh(self) -> None:
@@ -70,7 +78,7 @@ class Retriever:
     ) -> list[Document]:
         """Retrieve documents using BM25 and Supabase PGVector."""
         if self._hybrid_retriever is None:
-            raise RuntimeError("Hybrid retriever has not been initialized.")
+            self.refresh()
 
         return self._hybrid_retriever.retrieve(
             query,

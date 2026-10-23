@@ -31,7 +31,11 @@ class SupabaseVectorStore:
         return doc_ids
 
     def load_documents(self) -> list[Document]:
-        """Load all stored chunk documents from this PGVector collection."""
+        """Load all stored chunk documents from this PGVector collection.
+
+        Selects only the lightweight columns (id, document, cmetadata) needed for BM25,
+        avoiding downloading heavy 384-dimensional vector embedding arrays over the network.
+        """
         with self.store._make_sync_session() as session:
             collection = self.store.get_collection(session)
 
@@ -39,7 +43,11 @@ class SupabaseVectorStore:
                 return []
 
             rows = (
-                session.query(self.store.EmbeddingStore)
+                session.query(
+                    self.store.EmbeddingStore.id,
+                    self.store.EmbeddingStore.document,
+                    self.store.EmbeddingStore.cmetadata,
+                )
                 .filter(
                     self.store.EmbeddingStore.collection_id
                     == collection.uuid

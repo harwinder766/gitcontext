@@ -20,6 +20,7 @@ from gitcontext.embeddings.embedder import (
 from gitcontext.generation.llm import create_llm
 from gitcontext.graph.graph import build_graph
 from gitcontext.ingestion.pipeline import extract_github_repo, ingest_repository
+from gitcontext.retrieval.retriever import Retriever
 from gitcontext.vectorstore.supabase_store import SupabaseVectorStore
 from gitcontext.api.guardrails import (
     create_guardrail_scanners,
@@ -47,6 +48,21 @@ async def lifespan(application: FastAPI):
         application.state.cross_encoder_model = load_cross_encoder_model()
         application.state.llm = create_llm()
 
+        try:
+            application.state.retriever = Retriever(
+                embedding_model=application.state.embedding_model,
+                auto_refresh=True,
+            )
+        except Exception as error:
+            logfire.warn(
+                "Initial retriever refresh deferred: {error}",
+                error=str(error),
+            )
+            application.state.retriever = Retriever(
+                embedding_model=application.state.embedding_model,
+                auto_refresh=False,
+            )
+
         database_url = (os.getenv("SUPABASE_DATABASE_URL") or "").strip()
         if not database_url:
             raise RuntimeError(
@@ -65,6 +81,7 @@ async def lifespan(application: FastAPI):
                 llm=application.state.llm,
                 embedding_model=application.state.embedding_model,
                 cross_encoder_model=application.state.cross_encoder_model,
+                retriever=application.state.retriever,
                 checkpointer=checkpointer,
             )
             yield
@@ -137,9 +154,11 @@ def health() -> dict[str, str]:
 @app.get("/status")
 def status() -> dict[str, object]:
     model_ready = getattr(app.state, "embedding_model", None) is not None
+    retriever_ready = getattr(app.state, "retriever", None) is not None
     return {
         "status": "ok" if model_ready else "degraded",
         "embedding_model_ready": model_ready,
+        "retriever_ready": retriever_ready,
         "vector_store_configured": bool(os.getenv("SUPABASE_DATABASE_URL")),
     }
 
@@ -160,6 +179,18 @@ def index(request: IngestRequest) -> dict[str, object]:
             max_prs=request.max_prs,
             embedding_model=getattr(app.state, "embedding_model", None),
         )
+
+        # Refresh in-memory retriever cache now that new repository chunks are indexed
+        retriever = getattr(app.state, "retriever", None)
+        if retriever is not None:
+            try:
+                retriever.refresh()
+            except Exception as refresh_error:
+                logfire.warn(
+                    "Retriever refresh failed after ingestion: {error}",
+                    error=str(refresh_error),
+                )
+
         _set_status(repo_name, "done", "Ingestion completed.", error=None)
         return {
             "status": "done",
@@ -334,6 +365,14 @@ def delete_repository(repo_name: str) -> dict[str, object]:
         ) from error
 
     _INGESTION_STATUS.pop(repo_name, None)
+
+    retriever = getattr(app.state, "retriever", None)
+    if retriever is not None:
+        try:
+            retriever.refresh()
+        except Exception:
+            pass
+
     return {
         "repo_name": repo_name,
         "deleted_chunks": deleted_count,

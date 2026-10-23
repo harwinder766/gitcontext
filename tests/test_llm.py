@@ -86,7 +86,7 @@ def test_create_llm_with_both_keys_sets_fallback(monkeypatch):
     # Fallbacks configuration
     assert router.fallbacks == [{"gitcontext-primary": ["gitcontext-fallback-gemini"]}]
     assert router.num_retries == 1
-    assert router.timeout == 10
+    assert router.timeout == 12
 
 
 def test_create_llm_configures_caching(monkeypatch):

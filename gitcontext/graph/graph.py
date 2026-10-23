@@ -35,6 +35,7 @@ def build_graph(
     llm: Any,
     embedding_model: Any = None,
     cross_encoder_model: Any | None = None,
+    retriever: Any | None = None,
     rag_factory: Callable[..., RAG] = RAG,
     checkpointer: Any | None = None,
 ) -> CompiledStateGraph:
@@ -56,6 +57,7 @@ def build_graph(
             llm=llm,
             embedding_model=embedding_model,
             cross_encoder_model=cross_encoder_model,
+            retriever=retriever,
         ),
     )
 

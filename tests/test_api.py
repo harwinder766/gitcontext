@@ -19,6 +19,7 @@ def test_status_reports_vector_store_configuration(monkeypatch):
     payload = response.json()
     assert payload["status"] == "degraded"
     assert payload["embedding_model_ready"] is False
+    assert payload["retriever_ready"] is False
     assert payload["vector_store_configured"] is True
 
 

@@ -124,6 +124,7 @@ def repository_node(
     llm: Any,
     embedding_model: Any,
     cross_encoder_model: Any,
+    retriever: Any | None = None,
 ) -> dict[str, Any]:
     """Execute RAG retrieval using the rewritten search query."""
     original_question = state.get("question", "")
@@ -147,6 +148,7 @@ def repository_node(
                 filter={"repo_name": repo_name},
                 embedding_model=embedding_model,
                 cross_encoder_model=cross_encoder_model,
+                retriever=retriever,
                 llm=llm,
                 conversation_history=history,
             ).generate_response()

@@ -115,6 +115,7 @@ class RAG:
         embedding_model: Embeddings | None = None,
         cross_encoder_model: Any | None = None,
         conversation_history: list[dict[str, Any]] | None = None,
+        retriever: Retriever | None = None,
     ) -> None:
         if not query.strip():
             raise ValueError("Query must be a non-empty string.")
@@ -125,13 +126,17 @@ class RAG:
         self.question = question or query  # Original user question for answer generation
         self.filter = filter
         self.conversation_history = (conversation_history or [])[-6:]
-        self.retriever = Retriever(
-            k=total_k,
-            bm25_k=max(total_k, 10),
-            vector_k=max(total_k, 10),
-            rrf_k=max(total_k, 60),
-            embedding_model=embedding_model,
-        )
+        if retriever is not None:
+            self.retriever = retriever
+        else:
+            self.retriever = Retriever(
+                k=total_k,
+                bm25_k=max(total_k, 10),
+                vector_k=max(total_k, 10),
+                rrf_k=max(total_k, 60),
+                embedding_model=embedding_model,
+                auto_refresh=True,
+            )
         self.reranker = CrossEncoderReranker(
             model=cross_encoder_model,
             top_n=top_k,
