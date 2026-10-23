@@ -19,3 +19,4 @@ langgraph>=0.2.0
 langgraph-checkpoint-postgres>=2.0.0
 logfire>=2.0.0
 requests>=2.28.0
+logfire[fastapi]>=2.0.0
