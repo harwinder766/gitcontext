@@ -8,25 +8,29 @@ from uuid import uuid4
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="GitContext | App", page_icon="🧠", layout="wide")
+# Updated to a more engaging developer/AI copilot icon
+st.set_page_config(
+    page_title="GitContext | Codebase Intelligence",
+    page_icon="⚡",
+    layout="wide",
+)
 
-API_URL = os.getenv("GITCONTEXT_API_URL", "http://127.0.0.1:8000").rstrip("/")
-GITHUB_URL = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+?(?:\.git)?/?$")
+# Live Render backend URL set as default (still overridable via GITCONTEXT_API_URL env var)
+API_URL = os.getenv("GITCONTEXT_API_URL", "https://gitcontext-xw5w.onrender.com").rstrip("/")
+
+GITHUB_URL = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+(?:\.git)?/?$")
 CITATION = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
+
 SUGGESTIONS = [
-    "Give me a brief overview of this repository",
-    "What are the main components and how do they fit together?",
-    "What changed in the most recent commits?",
+    "⚡ Give me a brief overview of this repository",
+    "🔍 What are the main components and how do they fit together?",
+    "🐙 What changed in the most recent commits?",
 ]
 
 # Reuse the landing-page stylesheet if it exists.
 css_file = Path(__file__).parent.parent / "styles.css"
 if css_file.exists():
-    st.markdown(
-        f"<style>{css_file.read_text(encoding='utf-8')}</style>",
-        unsafe_allow_html=True,
-    )
-
+    st.markdown(f"<style>{css_file.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
 # -------------------- API HELPERS --------------------
 
