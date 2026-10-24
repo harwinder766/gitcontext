@@ -203,12 +203,16 @@ technologies = [
     "FastAPI",
     "Streamlit",
     "LangChain",
-    "Sentence Transformers",
+    "Langgraph",
+    "Jina Embeddings",
     "Supabase pgvector",
     "BM25 + RRF",
-    "Cross-encoder reranking",
+    "Jina Reranker",
     "PyDriller",
+    "LiteLLM Gateway",
+    "Pydantic Logfire",
     "PyGithub",
+    "Deepeval"
 ]
  
 show_html("".join(f'<span class="tech-pill">{name}</span>' for name in technologies))

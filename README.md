@@ -1,7 +1,7 @@
 # GitContext
 
 <p align="center">
-  <strong>Zero-RAM Codebase Intelligence & Developer Copilot powered by Hybrid RAG</strong>
+  <strong>AI-Powered Codebase Assistant & Developer Copilot built with Hybrid RAG</strong>
 </p>
 
 <p align="center">
@@ -21,26 +21,50 @@
 ## 🌐 Live Demos
 
 - **Backend API Docs (Swagger UI):** [`https://gitcontext-xw5w.onrender.com/docs`](https://gitcontext-xw5w.onrender.com/docs)
-- **Frontend Web UI (Streamlit):** [`https://<your-streamlit-app-url>.streamlit.app`](https://<your-streamlit-app-url>.streamlit.app) *(or run locally via `streamlit run ui/home.py`)*
+- **Frontend Web UI (Streamlit):** [Open GitContext](https://gitcontext-9w9gptwf8yyqtw5cwxrllc.streamlit.app) *(or run locally via `streamlit run ui/home.py`)*
 
 ---
 
-## ⚡ Core Value Proposition: The "Zero-RAM" Architecture
+## ⚙️ Lightweight, API-Based Architecture
 
-Most open-source RAG architectures suffer from prohibitive memory requirements: loading local PyTorch dependencies (`torch`, `sentence-transformers`, `transformers`, `onnxruntime`, and local cross-encoder models) immediately consumes **2.5 GB to 3.5 GB of RAM** upon application boot. This makes hosting on budget or free-tier cloud platforms (Render, Koyeb, Railway) impossible due to strict **512 MB RAM limits**.
+GitContext uses hosted APIs for embedding generation and document reranking instead of loading those model weights into the backend process. The backend still keeps its Python runtime, application state, cached data, and BM25 index in memory, so actual consumption depends on repository size, workload, and deployment environment.
 
-**GitContext is architected from the ground up for a Zero-RAM footprint (~120 MB to 180 MB runtime RAM at peak load):**
+The main components of this design are:
 
-1. **Zero-RAM Dense Embeddings:** Replaces heavy local PyTorch embedding models with the remote **Jina AI Cloud Embeddings API** (`jina-embeddings-v3`, 384 dimensions) and optional **Google Gemini API** (`models/text-embedding-004`). Vectors are natively truncated to 384 dimensions to remain 100% compatible with existing Supabase pgvector tables.
-2. **Zero-RAM Cross-Encoder Reranking:** Eliminates the ~650 MB local `ms-marco-MiniLM-L-6-v2` cross-encoder in favor of the **Jina AI Reranker API** (`jina-reranker-v2-base-multilingual`), providing state-of-the-art cross-attentive relevance scoring over HTTP without loading any weights into container memory.
-3. **Zero-RAM Deterministic Guardrails:** Replaces 1 GB+ DeBERTa-based ONNX guardrail scanners with sub-millisecond deterministic regex and heuristic filters. It strips invisible zero-width Unicode characters and catches jailbreak injection patterns while intentionally preserving legitimate developer code terminology (`api_key`, `openai`, `token`, `secret`, `create_llm`).
-4. **Resilient LLM Routing & In-Memory Caching:** Uses **LiteLLM Router** with automatic multi-tier fallback between **Groq** (`llama-3.3-70b-versatile`) and **Google Gemini** (`gemini-1.5-flash-latest`), backed by an in-memory TTL response cache (`LITELLM_CACHE_TYPE=local`, TTL 3600s) to eliminate redundant API calls and prevent 429 rate limit errors.
+1. **Hosted Embeddings:** Uses the **Jina AI Embeddings API** (`jina-embeddings-v3`) to generate 384-dimensional vectors, with an optional **Google Gemini** embedding provider. Embeddings are stored in Supabase PGVector. The selected embedding provider and dimensions must remain consistent with the existing vector collection.
+2. **API-Based Reranking:** Uses the **Jina AI Reranker API** (`jina-reranker-v2-base-multilingual`) to score query-document pairs without loading a local cross-encoder model into the backend process. This reduces local model memory requirements, while introducing an external API dependency and network latency.
+3. **Rule-Based Guardrails:** Uses lightweight checks for input validation and suspicious patterns, including invisible zero-width Unicode characters and prompt-injection indicators. The checks are designed to avoid unnecessarily flagging common developer terms such as `api_key`, `openai`, `token`, `secret`, and `create_llm`.
+4. **LLM Routing & Response Caching:** Uses **LiteLLM Router** to route requests between configured providers such as **Groq** (`llama-3.3-70b-versatile`) and **Google Gemini** (`gemini-1.5-flash-latest`). An in-memory TTL cache (`LITELLM_CACHE_TYPE=local`, TTL 3600s) can reuse responses to repeated queries and reduce duplicate provider calls. Provider availability, quotas, and rate limits still apply.
+
+---
+
+## 📏 Deployment Notes & Large Repositories
+
+GitContext is a personal portfolio project, so the currently deployed demo uses free-tier or quota-limited services to keep it publicly accessible:
+
+- **Backend hosting:** Render
+- **Vector database:** Supabase PostgreSQL with `pgvector`
+- **Embedding and reranking:** Jina AI APIs
+- **Frontend:** Streamlit Community Cloud
+
+The ingestion pipeline is designed to collect context from repository files, commit history, and pull requests. However, the capacity of the **publicly deployed instance** is constrained by the resources and rate limits of its hosting and API providers. In particular, API quotas, request limits, and rate limiting can make ingestion of very large repositories slow or cause some ingestion operations to fail on the current free-tier deployment. This is a limitation of the demo environment and its service quotas, not a claim that the GitContext approach has a fixed maximum repository size. Actual capacity also depends on repository size, file count, commit and pull-request history, and the resources available to the backend.
+
+### Running GitContext locally for larger repositories
+
+If you need to ingest a large repository, you can clone this project and run it locally or on infrastructure with more generous resources. A possible configuration is to:
+
+1. Replace the hosted **Jina embedding API** integration with a local embedding model, such as a compatible Sentence Transformers model.
+2. Replace **Supabase PGVector** with a local vector store, such as **Chroma** or **FAISS**.
+3. If you also want to avoid Jina's reranking API limits, use a local reranker or adjust the retrieval pipeline to run without the hosted reranking step.
+4. Keep the embedding model, vector dimensions, and vector-store configuration consistent. Re-embed and re-index the repository when changing embedding models or vector-store backends.
+
+This setup can reduce dependence on external API quotas and hosted database limits, but it requires the corresponding local integrations and enough CPU, RAM, and disk space on your machine. The current public deployment uses Jina and Supabase; local alternatives may require configuration changes or implementation work and are not automatically enabled by the deployed demo.
 
 ---
 
 ## 🔍 Hybrid Retrieval System
 
-Codebase search requires both **conceptual understanding** (e.g., *"where is the database connection pool defined?"*) and **exact lexical precision** (e.g., *"find the `create_embedding_model` function definition"*). GitContext addresses this through a high-performance Hybrid Search pipeline:
+Codebase search benefits from both **semantic understanding** (e.g., *"where is the database connection pool defined?"*) and **lexical matching** (e.g., *"find the `create_embedding_model` function definition"*). GitContext combines these approaches in a hybrid retrieval pipeline:
 
 ```
                           ┌─────────────────────────────────────┐
@@ -77,27 +101,53 @@ Codebase search requires both **conceptual understanding** (e.g., *"where is the
 ```
 
 ### 1. Dense Vector Search (Supabase PGVector)
-Connects directly to remote Postgres via `langchain-postgres` and `psycopg` session pooling. Chunks are queried using cosine similarity over 384-dimensional dense representations.
+Connects to the remote PostgreSQL database through `langchain-postgres` and `psycopg`. Chunks are queried using cosine similarity over 384-dimensional dense representations.
 
 ### 2. Sparse Lexical Search (rank-bm25)
-Maintains an in-memory BM25 index over codebase tokens, ensuring instant exact-string, class name, error message, and identifier retrieval that dense search can miss.
+Maintains an in-memory BM25 index over codebase tokens. This helps retrieve exact identifiers, class names, file names, and error messages that semantic search may rank less effectively.
 
-### 3. Startup Index Caching (Zero Query Delay)
-In standard implementations, loading documents from a remote database on every request introduces significant network delays. GitContext pre-fetches and indexes document chunks into BM25 **once during FastAPI lifespan startup**. The initialized retriever is cached in `app.state.retriever` and only refreshed incrementally when a new repository is indexed (`POST /index`), bringing query retrieval times down from **~89 seconds to milliseconds**.
+### 3. Startup Index Caching
+GitContext builds the in-memory BM25 index during FastAPI lifespan startup and stores the initialized retriever in `app.state.retriever`. The retriever is refreshed when a repository is indexed (`POST /index`) rather than rebuilding the BM25 index from the database for every question. This avoids repeated full-index loading during normal query handling. Actual latency depends on repository size, database performance, network conditions, and retrieval configuration.
 
 ### 4. Reciprocal Rank Fusion (RRF) & Cross-Encoder Reranking
-Combines ranked candidates from BM25 and pgvector using reciprocal rank scoring ($RRF_{score} = \sum \frac{1}{k + rank}$, $k=60$). The merged candidate pool is passed to Jina Reranker v2 to re-score query-document pairs and return the most relevant documents.
+Combines ranked candidates from BM25 and pgvector using reciprocal rank scoring ($RRF_{score} = \sum \frac{1}{k + rank}$, $k=60$). The merged candidate pool is then passed to Jina Reranker v2, which scores query-document pairs to help order the most relevant chunks.
 
 ---
 
 ## 📦 Multi-Source Git Ingestion Pipeline
 
-GitContext indexes three layers of developer context:
+GitContext builds context from three sources and enriches the resulting chunks with metadata and citations:
 
-1. **Repository Source Code Tree:** Discovers source code files, applies language-aware AST chunking (`ast_chunker.py` and `splitter.py`) preserving function/class boundaries, and assigns unique chunk hashes.
-2. **Git Commit History & Diffs:** Uses **PyDriller** and **GitPython** to traverse commit logs, parsing commit messages, author metadata, and unified diff changes.
-3. **Pull Requests & Reviews:** Integrates with **PyGithub** to extract PR titles, descriptions, and discussion threads.
-4. **Rich Metadata & Inline Citations:** Every indexed chunk preserves structured metadata (`repo_name`, `file_path`, `commit_hash`, `pr_number`, `document_type`). When generating answers, the LLM provides grounded, bracketed inline citations `[1]`, `[2]` linking directly to source files and diffs.
+1. **Repository Source Code Tree:** The current AST-based source-code chunker is implemented for **Python**. It uses `ast_chunker.py` and `splitter.py` to identify Python function and class boundaries, then assigns unique chunk hashes. Python is therefore the primary language supported by the structured source-tree ingestion path.
+2. **Git Commit History & Diffs:** Uses **PyDriller** and **GitPython** to traverse commit logs, parsing commit messages, author metadata, and unified diff changes. Commit messages and text diffs can provide context for other programming languages as well; this path does not apply language-specific AST parsing to those languages.
+3. **Pull Requests & Reviews:** Integrates with **PyGithub** to extract PR titles, descriptions, and discussion threads. PR descriptions, comments, and code-change text can add context for repositories written in other languages.
+4. **Rich Metadata & Inline Citations:** Indexed content preserves structured metadata such as `repo_name`, `file_path`, `commit_hash`, `pr_number`, and `document_type`. When generating answers, the LLM provides bracketed inline citations `[1]`, `[2]` linking to available source files and diffs.
+
+### Language Support
+
+**Python is the primary language supported by the current repository-file ingestion pipeline**, because the AST-based parser currently handles Python syntax only. GitContext can still collect information about repositories written in other languages through commit-history/diff ingestion and pull-request ingestion. However, those sources provide commit- and PR-level context; they do not provide the same AST-aware, function/class-level source-code indexing currently available for Python. Support for AST-based chunking of additional languages would require implementing language-specific parsers or chunkers.
+
+---
+
+## 🧪 RAG Pipeline Evaluation
+
+GitContext's RAG pipeline is evaluated with **[DeepEval](https://deepeval.com/)** on a test set of **18 cases**. The pass rate is the percentage of cases that met the configured threshold of **0.70** for each metric.
+
+| Metric | Average score | Cases passed | Pass rate | Cases evaluated |
+| :--- | ---: | ---: | ---: | ---: |
+| [Faithfulness](https://deepeval.com/docs/metrics-faithfulness) | **0.9323** | 17/18 | **94.44%** | 18 |
+| [Answer relevancy](https://deepeval.com/docs/metrics-answer-relevancy) | **0.9232** | 17/18 | **94.44%** | 18 |
+| [Contextual relevancy](https://deepeval.com/docs/metrics-contextual-relevancy) | **0.5381** | 10/18 | **55.56%** | 18 |
+| [Contextual precision](https://deepeval.com/docs/metrics-contextual-precision) | **0.8611** | 14/18 | **77.78%** | 18 |
+| [Contextual recall](https://deepeval.com/docs/metrics-contextual-recall) | **0.8296** | 15/18 | **83.33%** | 18 |
+
+### What these results indicate
+
+- **Answer generation is a relative strength in this evaluation.** Faithfulness (0.9323) and answer relevancy (0.9232) both score above 0.92, and 17 of 18 cases pass the threshold for each metric. This suggests that the generated answers are generally grounded in the retrieved context and address the questions in this test set.
+- **Retrieval performance is mixed.** Contextual precision (0.8611; 14/18 passing) and contextual recall (0.8296; 15/18 passing) are encouraging. However, contextual relevancy is weak: its average is 0.5381, and only 3 of 18 cases pass. This indicates that the retrieved context often includes material that is not sufficiently relevant to the query, even when useful evidence may also be present.
+- **The main improvement area is retrieval relevance and noise reduction.** Areas to investigate include chunk boundaries and size, the number of candidates retrieved (top-K), metadata or file filtering, query rewriting, and the balance between BM25 and dense vector retrieval.
+
+**Overall assessment:** these are promising early results for answer faithfulness and answer relevancy, but they do **not** show that retrieval quality is consistently strong. Contextual relevancy is a clear weakness that should be addressed before describing the RAG pipeline as highly reliable. The evaluation contains only 18 cases, so it is a small sample rather than a production-wide performance guarantee. Results can vary with the dataset, metric configuration, and evaluator model; expand the test set and rerun DeepEval after retrieval or generation changes.
 
 ---
 
@@ -150,7 +200,7 @@ The conversational flow is managed by **LangGraph** with PostgreSQL checkpointin
 rag_project/
 ├── gitcontext/                      # Core backend package
 │   ├── api/                         # FastAPI routing and application layer
-│   │   ├── guardrails.py            # Zero-RAM deterministic regex input/output sanitizers
+│   │   ├── guardrails.py            # Rule-based input/output checks and sanitizers
 │   │   ├── main.py                  # FastAPI lifespan, routes (/index, /query, /health, /status)
 │   │   └── schemas.py               # Pydantic request and response contracts
 │   ├── chunking/                    # Code-aware token splitters
@@ -271,7 +321,7 @@ streamlit run ui/home.py
 | Variable | Description | Required | Example / Default |
 | :--- | :--- | :--- | :--- |
 | `SUPABASE_DATABASE_URL` | PostgreSQL connection URI for Supabase pgvector and LangGraph checkpointer. | **Yes** | `postgresql://postgres.[ref]:[pass]@aws-0-[region].pooler.supabase.com:5432/postgres` |
-| `JINA_API_KEY` | Jina AI API key for zero-RAM embeddings and cross-encoder reranking. | **Yes** | `jina_xxxxxxxxxxxx` |
+| `JINA_API_KEY` | Jina AI API key for hosted embeddings and reranking (when those providers are enabled). | **Yes** | `jina_xxxxxxxxxxxx` |
 | `EMBEDDING_PROVIDER` | Embedding provider to use (`jina` or `google`). | No | `jina` |
 | `EMBEDDING_MODEL` | Embedding model identifier. | No | `jina-embeddings-v3` |
 | `CROSSENCODER_MODEL` | Model for Jina Reranker API. | No | `jina-reranker-v2-base-multilingual` |
@@ -291,7 +341,7 @@ streamlit run ui/home.py
 
 ## ☁️ Production Cloud Deployment Guide
 
-### 1. Backend Deployment (Render / Koyeb / Railway Free Tier)
+### 1. Backend Deployment (Render / Koyeb / Railway)
 Deploy the FastAPI backend as a Docker container or Python Web Service:
 
 - **Build Command:** `pip install -r requirements.txt`
@@ -299,10 +349,8 @@ Deploy the FastAPI backend as a Docker container or Python Web Service:
   ```bash
   uvicorn gitcontext.api.main:app --host 0.0.0.0 --port $PORT --workers 1 --no-access-log
   ```
-- **Recommended Container Environment Variables:**
-  - `PYTHONUNBUFFERED=1`
-  - `MALLOC_ARENA_MAX=2` *(prevents memory fragmentation in small Linux containers)*
-- Because heavy local ML models are eliminated, the entire backend service boots in seconds and comfortably operates under **180 MB RAM**, well within 512 MB free limits.
+- **Useful runtime setting:** `PYTHONUNBUFFERED=1` (makes application logs appear promptly in the hosting provider's log viewer).
+- Using hosted embedding and reranking APIs avoids loading those model weights into the backend process. Measure memory under your expected repository size and request load, and select a hosting plan with enough headroom for startup and peak usage.
 
 ### 2. Frontend Deployment (Streamlit Community Cloud)
 1. Fork or push this repository to GitHub.
