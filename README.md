@@ -128,6 +128,10 @@ GitContext builds context from three sources and enriches the resulting chunks w
 **Python is the primary language supported by the current repository-file ingestion pipeline**, because the AST-based parser currently handles Python syntax only. GitContext can still collect information about repositories written in other languages through commit-history/diff ingestion and pull-request ingestion. However, those sources provide commit- and PR-level context; they do not provide the same AST-aware, function/class-level source-code indexing currently available for Python. Support for AST-based chunking of additional languages would require implementing language-specific parsers or chunkers.
 
 ---
+## Project Demo
+
+https://github.com/user-attachments/assets/9826f681-e9a2-482d-a0cb-90073493aa27
+
 
 ## 🧪 RAG Pipeline Evaluation
 
